@@ -1,0 +1,179 @@
+# Databricks Free Edition – External Location Setup (Manual UI Method)
+
+**Project:** MovieLens Delta Lakehouse  
+**Goal:** Configure AWS S3 access in Databricks Free Edition using Unity Catalog External Locations via the *Manual UI Flow** (no AWS Quickstart, no CloudFormation).
+---
+
+## 1. Overview
+Databricks requires **External Locations** to securely access cloud storage when Unity Catalog is enabled.  
+In the Free Edition, the **recommended approach** is to:
+
+1. Create an S3 bucket and folders.
+2. Create an IAM Role with S3 permissions.
+3. Create External Locations directly from the Databricks UI.
+4. Paste the Databricks-generated trust policy into AWS.
+5. Grant permissions inside Databricks.
+
+This enables Bronze → Silver → Gold Delta Lake pipelines.
+
+---
+
+## 2. Prerequisites
+- AWS Account (IAM + S3 access)
+- Databricks Free / Trial Workspace
+- Unity Catalog enabled in the workspace
+- Permission to create IAM roles and policies in AWS
+
+---
+
+## 3. Step 1 – Create S3 Bucket and Folder Structure
+Create **one S3 bucket**.
+Example : project-data
+
+Inside the bucket, Create folders:
+
+raw/
+bronze/
+silver/
+gold/
+
+These map directly to Medallion architecture layers.
+
+---
+
+## 4. Step 2 – Create IAM Role in AWS
+Navigate to : AWS Console → IAM → Roles → Create Role
+
+### Role Type
+Select : AWS Service → EC2
+(This works for Databricks Free Edition.)
+
+### Attach Inline Policy
+Attach an inline policy with **least-privilege S3 access**:
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::project-data"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::project-data/*"
+    }
+  ]
+}
+
+Role Name : databricks-data-role
+After creation, copy the IAM Role ARN.
+
+⸻
+
+## 5. Step 3 – Create External Location in Databricks (Inline Credential Creation)
+Navigate to : Databricks Workspace → Catalog → External Data → External Locations → Create
+
+Fill in the form :
+Field	Value
+Name : ext_bronze_data
+Storage Type : S3
+URL : s3://project-data/bronze/
+
+Storage Credential (Important)
+	•	Click Create New
+	•	Paste the IAM Role ARN
+	•	Save
+
+Do not close the screen yet.
+
+⸻
+
+## 6. Step 4 – Update IAM Trust Policy (Critical)
+After clicking Create, Databricks will show a Trust Policy JSON.
+You must apply this policy in AWS.
+
+Steps :
+	1.	Go to AWS Console → IAM → Roles
+	2.	Open databricks-movielens-role
+	3.	Go to Trust Relationships
+	4.	Click Edit
+	5.	Replace existing JSON with the policy provided by Databricks
+	6.	Save
+
+This allows Databricks to assume the role securely.
+
+⸻
+
+## 7. Step 5 – Finalize External Location
+Return to Databricks.
+If the trust policy is correct, the External Location will validate and be created successfully.
+
+⸻
+
+## 8. Step 6 – Create External Locations for All Layers
+Repeat the same process for : External Location Name	S3 Path
+ext_raw_data	s3://project-data/raw/
+ext_bronze_data	s3://project-data/bronze/
+ext_silver_data	s3://project-data/silver/
+ext_gold_data	s3://project-data/gold/
+
+⸻
+
+## 9. Step 7 – Grant Permissions
+For each External Location:
+
+Catalog → External Locations → <location> → Permissions → Grant
+
+Grant to : account users
+
+Privileges :
+	•	READ FILES
+	•	WRITE FILES
+(or ALL PRIVILEGES for demo projects)
+
+⸻
+
+## 10. Validation Test
+Run in Databricks SQL Editor :
+
+CREATE TABLE movielens.bronze.test_ext_table
+USING DELTA
+LOCATION 's3://project_data/bronze'
+AS SELECT 1;
+
+Then : SELECT * FROM project_data.bronze.test_ext_table;
+If this succeeds, the setup is correct.
+
+⸻
+## 11. Expected S3 Structure (Delta Lake)
+bronze/test_ext_table/
+ ├── _delta_log/
+ ├── part-00000.snappy.parquet
+
+This is expected and correct Delta Lake behavior.
+
+⸻
+
+12. Important Notes
+	•	Table names are logical, not file names.
+	•	Delta tables always create _delta_log.
+	•	Multiple parquet files are normal.
+	•	File Events validation failures can be ignored for batch pipelines.
+	•	Manual UI setup is acceptable and common for Free Edition projects.
+
+⸻
+
+Outcome
+
+After completing this guide:
+	•	Databricks can securely read/write S3
+	•	Unity Catalog governance is enforced
+	•	Delta Lake tables work correctly
+	•	Bronze → Silver → Gold pipelines can be built confidently
+
