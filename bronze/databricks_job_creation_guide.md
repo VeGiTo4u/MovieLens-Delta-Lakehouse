@@ -1,0 +1,73 @@
+# Databricks Job Setup Guide: Static Data Ingestion
+This guide documents the configuration for the **"Bronze Layer - Static Data Load"** job in Databricks Workflows. This job ingests the 4 one-time load CSV files (Movies, Links, Genome Tags, Genome Scores) into the Bronze layer as External Delta Tables.
+
+---
+
+## Step 1: Job Configuration
+1.  Navigate to **Workflows** (Jobs icon) in the Databricks sidebar.
+2.  Click **Create Job**.
+3.  **Job Name:** `01_Ingest_Bronze_Static_Data`.
+
+---
+
+## Step 2: Configure Email Notifications
+To receive alerts when the job finishes or fails:
+
+1.  On the **Job Details** panel (right side of the screen), look for the **"Notifications"** section.
+2.  Click **+ Add Notification**.
+3.  **On Success:** Enter your email address (to confirm the load completed).
+4.  **On Failure:** Enter your email address (critical for immediate debugging).
+5.  Click **Add**.
+
+---
+## Step 3: Configure Tasks
+Create **4 Parallel Tasks** pointing to the **same notebook**: `01_Ingest_Static_Bronze`.
+**Note:** The `catalog_name` and `schema_name` parameters default to `movielens` and `bronze` in the code, so you only need to provide the 3 specific parameters below for each task.
+
+### Task 1: Load Movies
+* **Task Name:** `Load_Movies`
+* **Type:** Notebook
+* **Path:** Select `bronze_static_data_load`
+* **Parameters:**
+    * `table_name`: `movies`
+    * `s3_source_path`: `YOUR S3 PATH`
+    * `s3_target_path`: `YOUR S3 PATH`
+
+### Task 2: Load Links
+* **Task Name:** `Load_Links`
+* **Type:** Notebook
+* **Path:** Select `bronze_static_data_load`
+* **Parameters:**
+    * `table_name`: `links`
+    * `s3_source_path`: `YOUR S3 PATH`
+    * `s3_target_path`: `YOUR S3 PATH`
+
+### Task 3: Load Genome Tags
+* **Task Name:** `Load_Genome_Tags`
+* **Type:** Notebook
+* **Path:** Select `bronze_static_data_load`
+* **Parameters:**
+    * `table_name`: `genome_tags`
+    * `s3_source_path`: `YOUR S3 PATH`
+    * `s3_target_path`: `YOUR S3 PATH`
+
+### Task 4: Load Genome Scores
+* **Task Name:** `Load_Genome_Scores`
+* **Type:** Notebook
+* **Path:** Select `bronze_static_data_load`
+* **Parameters:**
+    * `table_name`: `genome_scores`
+    * `s3_source_path`: `YOUR S3 PATH`
+    * `s3_target_path`: `YOUR S3 PATH`
+
+---
+
+## Step 4: Execution & Verification
+1.  **Dependencies:** Ensure all 4 tasks are set to run in parallel (no dependency arrows between them in the visual graph).
+2.  **Run:** Click the blue **Run now** button in the top right corner.
+3.  **Monitor:** You will receive an email notification when the job starts and finishes (as configured in Step 2).
+4.  **Verify:**
+    * Wait for all tasks to turn **Green**.
+    * Go to **Catalog Explorer** → `movielens` → `bronze`.
+    * Confirm all 4 tables exist and contain data.
+    * Click "Sample Data" on `movies` to ensure columns are readable.
