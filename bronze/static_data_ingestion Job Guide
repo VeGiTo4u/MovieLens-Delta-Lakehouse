@@ -6,7 +6,7 @@ This guide documents the configuration for the **"Bronze Layer - Static Data Loa
 ## Step 1: Job Configuration
 1.  Navigate to **Workflows** (Jobs icon) in the Databricks sidebar.
 2.  Click **Create Job**.
-3.  **Job Name:** `01_Ingest_Bronze_Static_Data`.
+3.  **Job Name:** `bronze_static_data_ingestion`.
 
 ---
 
@@ -21,7 +21,7 @@ To receive alerts when the job finishes or fails:
 
 ---
 ## Step 3: Configure Tasks
-Create **4 Parallel Tasks** pointing to the **same notebook**: `01_Ingest_Static_Bronze`.
+Create **4 Parallel Tasks** pointing to the **same notebook**: `bronze_static_data_ingestion`.
 **Note:** The `catalog_name` and `schema_name` parameters default to `movielens` and `bronze` in the code, so you only need to provide the 3 specific parameters below for each task.
 
 ### Task 1: Load Movies
