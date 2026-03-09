@@ -33,9 +33,10 @@ env/
 *.ipynb
 
 # =============================================================================
-# Data Files — Keep Parquet dirs in .gitkeep, ignore actual data
+# Data Files 
+# Note: Streamlit Parquet data is committed to the repo since it's aggregated 
+# KPI data (~50KB) and required for the Streamlit Community Cloud deployment.
 # =============================================================================
-streamlit_app/data/*.parquet/**/*.parquet
 streamlit_app/data/.sync_manifest.json
 
 # =============================================================================
