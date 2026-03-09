@@ -4,9 +4,9 @@ on:
   # This allows you to trigger the workflow manually from the GitHub Actions UI
   workflow_dispatch:
   
-  # Optional: Schedule sync every day at 2:00 AM UTC (uncomment to enable)
-  # schedule:
-  #   - cron: '0 2 * * *'
+  # Optional: Schedule sync every day at 12:00 PM UTC
+  schedule:
+    - cron: '0 12 * * *'
 
 jobs:
   sync_data:
