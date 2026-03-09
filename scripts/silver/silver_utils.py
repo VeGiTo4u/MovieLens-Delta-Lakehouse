@@ -853,7 +853,7 @@ def write_incremental_merge(
 
         -- Part 1: Rows to EXPIRE existing current versions
         SELECT
-            {', '.join(f'target.{c}' for c in merge_key_cols)},
+            {', '.join(f'target.{c}' for c in source_cols)},
             'update' AS _merge_action,
             source.interaction_timestamp AS _new_effective_end_date
         FROM {full_table_name} AS target
@@ -866,7 +866,7 @@ def write_incremental_merge(
 
         -- Part 2: All incoming rows to INSERT as new versions
         SELECT
-            {', '.join(f'source.{c}' for c in merge_key_cols)},
+            {source_select},
             'insert' AS _merge_action,
             CAST(NULL AS TIMESTAMP) AS _new_effective_end_date
         FROM {source_view} AS source
