@@ -6,7 +6,7 @@ Main entry page showing high-level KPI cards and rating distribution.
 
 import streamlit as st
 import plotly.express as px
-from data_loader import load_yearly_summary, load_rating_distribution
+from data_loader import load_yearly_summary, load_rating_distribution, load_all_time_summary
 
 # ── Page Config ──────────────────────────────────────────────
 st.set_page_config(
@@ -88,14 +88,14 @@ st.markdown("")
 # ── Load Data ────────────────────────────────────────────────
 df_yearly = load_yearly_summary()
 df_rating_dist = load_rating_distribution()
+df_all_time = load_all_time_summary()
 
 # ── KPI Cards (All-Time Overview) ───────────────────────────
-# Calculate all-time totals and weighted averages
-all_time_ratings = df_yearly["total_ratings"].sum()
-all_time_users   = df_yearly["unique_users"].sum()
-all_time_movies  = df_yearly["unique_movies"].sum()
-# Weighted average math: sum(avg * count) / sum(count)
-weighted_avg_rating = (df_yearly["avg_rating"] * df_yearly["total_ratings"]).sum() / all_time_ratings
+# Extracted true all-time unique values directly from Gold layer
+all_time_ratings = df_all_time["total_ratings"].iloc[0]
+all_time_users   = df_all_time["unique_users"].iloc[0]
+all_time_movies  = df_all_time["unique_movies"].iloc[0]
+weighted_avg_rating = df_all_time["avg_rating"].iloc[0]
 
 # Get latest year for the Delta (growth) indicators
 latest = df_yearly.sort_values("year", ascending=False).iloc[0]

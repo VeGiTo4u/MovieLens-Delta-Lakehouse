@@ -32,6 +32,7 @@ MANIFEST  = os.path.join(LOCAL_DIR, ".sync_manifest.json")
 
 # Expected KPI directories (Spark writes each as a folder)
 KPI_DIRS = [
+    "all_time_summary.parquet",
     "rating_trends_monthly.parquet",
     "genre_performance.parquet",
     "top_rated_movies.parquet",

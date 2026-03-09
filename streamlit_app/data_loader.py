@@ -86,3 +86,8 @@ def load_release_decade_analysis():
 @st.cache_data(ttl=300)
 def load_top_genome_tags():
     return _query("top_genome_tags.parquet")
+
+
+@st.cache_data(ttl=300)
+def load_all_time_summary():
+    return _query("all_time_summary.parquet")

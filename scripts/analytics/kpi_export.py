@@ -55,6 +55,28 @@ print("[DONE] All Gold tables loaded")
 # COMMAND ----------
 
 # ============================================================
+# KPI 0 — All-Time Summary
+# Single row: total ratings, distinct users, distinct movies, global avg rating
+# ============================================================
+print("[KPI 0] All-Time Summary")
+
+kpi_0 = (
+    fact_ratings
+    .agg(
+        F.count("*").alias("total_ratings"),
+        F.countDistinct("user_id").alias("unique_users"),
+        F.countDistinct("movie_sk").alias("unique_movies"),
+        F.round(F.avg("rating"), 2).alias("avg_rating"),
+    )
+)
+
+kpi_0_count = kpi_0.count()
+kpi_0.write.mode("overwrite").parquet(f"{OUTPUT_DIR}/all_time_summary.parquet")
+print(f"[DONE] all_time_summary.parquet — {kpi_0_count} rows")
+
+# COMMAND ----------
+
+# ============================================================
 # KPI 1 — Monthly Rating Trends
 # Line chart: avg rating + volume over time
 # ============================================================
@@ -342,6 +364,7 @@ print("=" * 60)
 print(f"  Output directory : {OUTPUT_DIR}")
 print(f"  Catalog used     : {catalog_name}")
 print("  Files written    :")
+print(f"    0. all_time_summary.parquet         — {kpi_0_count:,} rows")
 print(f"    1. rating_trends_monthly.parquet    — {kpi_1_count:,} rows")
 print(f"    2. genre_performance.parquet        — {kpi_2_count:,} rows")
 print(f"    3. top_rated_movies.parquet         — {kpi_3_count:,} rows")
