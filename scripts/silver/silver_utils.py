@@ -836,7 +836,9 @@ def write_incremental_merge(
     # (they'll be set by the MERGE logic)
     source_cols = [c for c in df_deduped.columns
                    if c not in ("is_current", "effective_end_date")]
-    source_select = ", ".join(f"source.{c}" for c in source_cols)
+    
+    target_select = ", ".join(f"target.{c} AS {c}" for c in source_cols)
+    source_select = ", ".join(f"source.{c} AS {c}" for c in source_cols)
 
     print(f"[INFO]  Building SCD2 staging view")
 
@@ -853,7 +855,7 @@ def write_incremental_merge(
 
         -- Part 1: Rows to EXPIRE existing current versions
         SELECT
-            {', '.join(f'target.{c}' for c in source_cols)},
+            {target_select},
             CAST(NULL AS BOOLEAN) AS is_current,
             CAST(NULL AS TIMESTAMP) AS effective_end_date,
             'update' AS _merge_action,
