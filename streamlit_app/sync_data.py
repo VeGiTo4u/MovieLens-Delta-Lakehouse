@@ -118,9 +118,12 @@ def sync():
             continue
 
         kpi_downloaded = 0
+        valid_filenames = set()
+        
         for obj in parquet_files:
             key = obj["Key"]
             filename = os.path.basename(key)
+            valid_filenames.add(filename)
             local_path = os.path.join(local_kpi_dir, filename)
             etag = obj["ETag"]
             manifest_key = f"{kpi_dir}/{filename}"
@@ -134,6 +137,13 @@ def sync():
             manifest[manifest_key] = etag
             downloaded += 1
             kpi_downloaded += 1
+
+        # Clean up stale local parquet files (from older Spark runs)
+        for local_file in os.listdir(local_kpi_dir):
+            if local_file.endswith(".parquet") and local_file not in valid_filenames:
+                os.remove(os.path.join(local_kpi_dir, local_file))
+                stale_manifest_key = f"{kpi_dir}/{local_file}"
+                manifest.pop(stale_manifest_key, None)
 
         status = f"↓ {kpi_downloaded} file(s)" if kpi_downloaded > 0 else "✓ up to date"
         print(f"  {status} — {kpi_dir}")
