@@ -9,7 +9,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from data_loader import load_user_activity_distribution, load_rating_distribution
 
-st.set_page_config(page_title="User Engagement | MovieLens", page_icon="👥", layout="wide")
+st.set_page_config(page_title="User Engagement | MovieLens", page_icon="M", layout="wide")
 
 st.markdown("""
 <style>
@@ -23,7 +23,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("# 👥 User Engagement")
+st.markdown("# User Engagement")
 st.markdown("How active are users? What ratings do they give?")
 st.markdown("")
 

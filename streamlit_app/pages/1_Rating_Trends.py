@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from data_loader import load_rating_trends_monthly, load_yearly_summary
 
-st.set_page_config(page_title="Rating Trends | MovieLens", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Rating Trends | MovieLens", page_icon="M", layout="wide")
 
 # ── Custom CSS ───────────────────────────────────────────────
 st.markdown("""
@@ -24,7 +24,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("# 📈 Rating Trends")
+st.markdown("# Rating Trends")
 st.markdown("How have ratings evolved month-over-month and year-over-year?")
 st.markdown("")
 

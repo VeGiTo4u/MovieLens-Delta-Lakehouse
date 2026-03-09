@@ -11,7 +11,7 @@ from data_loader import load_yearly_summary, load_rating_distribution, load_all_
 # ── Page Config ──────────────────────────────────────────────
 st.set_page_config(
     page_title="MovieLens Analytics",
-    page_icon="🎬",
+    page_icon="M",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -66,7 +66,7 @@ st.markdown("""
 
 # ── Sidebar ──────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 🎬 MovieLens Analytics")
+    st.markdown("## MovieLens Analytics")
     st.markdown("---")
     st.markdown(
         "A **Delta Lakehouse** pipeline powering analytics "
@@ -77,7 +77,7 @@ with st.sidebar:
     st.caption("Built with Streamlit + Plotly")
 
 # ── Title ────────────────────────────────────────────────────
-st.markdown("# 🎬 MovieLens Analytics Dashboard")
+st.markdown("# MovieLens Analytics Dashboard")
 st.markdown(
     "Real-time insights from the MovieLens Delta Lakehouse — "
     "powered by **DuckDB** and **Plotly**."
@@ -127,7 +127,7 @@ with col4:
     avg_diff = latest['avg_rating'] - weighted_avg_rating
     st.metric(
         label="Avg Rating (All-Time)",
-        value=f"{weighted_avg_rating:.2f} ★",
+        value=f"{weighted_avg_rating:.2f}",
         delta=f"{avg_diff:+.2f} latest year",
     )
 

@@ -8,7 +8,7 @@ import streamlit as st
 import plotly.express as px
 from data_loader import load_top_rated_movies, load_most_popular_movies
 
-st.set_page_config(page_title="Movies | MovieLens", page_icon="🎬", layout="wide")
+st.set_page_config(page_title="Movies | MovieLens", page_icon="M", layout="wide")
 
 st.markdown("""
 <style>
@@ -22,7 +22,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("# 🎬 Movie Rankings")
+st.markdown("# Movie Rankings")
 st.markdown("Discover the highest rated and most popular movies on the platform.")
 st.markdown("")
 
@@ -31,7 +31,7 @@ df_top_rated = load_top_rated_movies()
 df_most_popular = load_most_popular_movies()
 
 # ── Top Rated ────────────────────────────────────────────────
-st.markdown('<p class="section-header">🏆 Top 30 Highest Rated Movies <small style="color:#A0A0B0;">(min. 100 ratings)</small></p>', unsafe_allow_html=True)
+st.markdown('<p class="section-header">Top 30 Highest Rated Movies <small style="color:#A0A0B0;">(min. 100 ratings)</small></p>', unsafe_allow_html=True)
 
 df_top_rated_sorted = df_top_rated.sort_values("avg_rating", ascending=True).tail(30)
 
@@ -62,7 +62,7 @@ fig_rated.update_layout(
 st.plotly_chart(fig_rated, use_container_width=True)
 
 # ── Most Popular ─────────────────────────────────────────────
-st.markdown('<p class="section-header">🔥 Top 30 Most Popular Movies <small style="color:#A0A0B0;">(by rating count)</small></p>', unsafe_allow_html=True)
+st.markdown('<p class="section-header">Top 30 Most Popular Movies <small style="color:#A0A0B0;">(by rating count)</small></p>', unsafe_allow_html=True)
 
 df_popular_sorted = df_most_popular.sort_values("rating_count", ascending=True).tail(30)
 

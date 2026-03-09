@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from data_loader import load_release_decade_analysis, load_top_genome_tags
 
-st.set_page_config(page_title="Content DNA | MovieLens", page_icon="🧬", layout="wide")
+st.set_page_config(page_title="Content DNA | MovieLens", page_icon="M", layout="wide")
 
 st.markdown("""
 <style>
@@ -24,7 +24,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("# 🧬 Content DNA")
+st.markdown("# Content DNA")
 st.markdown("How does era affect ratings? What genome tags define the catalog?")
 st.markdown("")
 
@@ -82,13 +82,13 @@ st.plotly_chart(fig_decade, use_container_width=True)
 col1, col2, col3 = st.columns(3)
 with col1:
     best_decade = df_decades.loc[df_decades["avg_rating"].idxmax()]
-    st.metric("🏆 Best Rated Decade", best_decade["decade"], f"{best_decade['avg_rating']:.2f} ★")
+    st.metric("Best Rated Decade", best_decade["decade"], f"{best_decade['avg_rating']:.2f} avg")
 with col2:
     popular_decade = df_decades.loc[df_decades["total_ratings"].idxmax()]
-    st.metric("🔥 Most Popular Decade", popular_decade["decade"], f"{popular_decade['total_ratings']:,.0f} ratings")
+    st.metric("Most Popular Decade", popular_decade["decade"], f"{popular_decade['total_ratings']:,.0f} ratings")
 with col3:
     diverse_decade = df_decades.loc[df_decades["movie_count"].idxmax()]
-    st.metric("🎬 Most Movies", diverse_decade["decade"], f"{diverse_decade['movie_count']:,.0f} movies")
+    st.metric("Most Movies", diverse_decade["decade"], f"{diverse_decade['movie_count']:,.0f} movies")
 
 st.markdown("")
 
