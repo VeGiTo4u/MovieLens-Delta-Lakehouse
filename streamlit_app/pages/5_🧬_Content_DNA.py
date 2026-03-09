@@ -33,6 +33,10 @@ st.markdown("")
 df_decades = load_release_decade_analysis()
 df_tags = load_top_genome_tags()
 
+# Filter out very early movies (1800s/1900s/1910s) which have low volume 
+# and skew the "Best Rated Decade" metric (e.g., 1940s appearing artificially high).
+df_decades = df_decades[df_decades["decade"] >= "1920s"]
+
 # ── Release Decade Analysis ──────────────────────────────────
 st.markdown('<p class="section-header">Ratings by Movie Release Decade</p>', unsafe_allow_html=True)
 
