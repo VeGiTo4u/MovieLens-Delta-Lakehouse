@@ -89,50 +89,47 @@ st.markdown("")
 df_yearly = load_yearly_summary()
 df_rating_dist = load_rating_distribution()
 
-# ── KPI Cards (latest year) ─────────────────────────────────
+# ── KPI Cards (All-Time Overview) ───────────────────────────
+# Calculate all-time totals and weighted averages
+all_time_ratings = df_yearly["total_ratings"].sum()
+all_time_users   = df_yearly["unique_users"].sum()
+all_time_movies  = df_yearly["unique_movies"].sum()
+# Weighted average math: sum(avg * count) / sum(count)
+weighted_avg_rating = (df_yearly["avg_rating"] * df_yearly["total_ratings"]).sum() / all_time_ratings
+
+# Get latest year for the Delta (growth) indicators
 latest = df_yearly.sort_values("year", ascending=False).iloc[0]
-prev = df_yearly.sort_values("year", ascending=False).iloc[1] if len(df_yearly) > 1 else None
 
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    delta = None
-    if prev is not None:
-        delta = f"{latest['total_ratings'] - prev['total_ratings']:+,.0f}"
     st.metric(
-        label="Total Ratings",
-        value=f"{latest['total_ratings']:,.0f}",
-        delta=delta,
+        label="Total Ratings (All-Time)",
+        value=f"{all_time_ratings:,.0f}",
+        delta=f"+{latest['total_ratings']:,.0f} this year",
     )
 
 with col2:
-    delta = None
-    if prev is not None:
-        delta = f"{latest['unique_users'] - prev['unique_users']:+,.0f}"
     st.metric(
-        label="Unique Users",
-        value=f"{latest['unique_users']:,.0f}",
-        delta=delta,
+        label="Unique Users (All-Time)",
+        value=f"{all_time_users:,.0f}",
+        delta=f"+{latest['unique_users']:,.0f} this year",
     )
 
 with col3:
-    delta = None
-    if prev is not None:
-        delta = f"{latest['unique_movies'] - prev['unique_movies']:+,.0f}"
     st.metric(
-        label="Unique Movies",
-        value=f"{latest['unique_movies']:,.0f}",
-        delta=delta,
+        label="Unique Movies (All-Time)",
+        value=f"{all_time_movies:,.0f}",
+        delta=f"+{latest['unique_movies']:,.0f} this year",
     )
 
 with col4:
-    delta = None
-    if prev is not None:
-        delta = f"{latest['avg_rating'] - prev['avg_rating']:+.2f}"
+    # Delta for average rating is the absolute difference between all-time and latest year
+    avg_diff = latest['avg_rating'] - weighted_avg_rating
     st.metric(
-        label="Avg Rating",
-        value=f"{latest['avg_rating']:.2f} ★",
-        delta=delta,
+        label="Avg Rating (All-Time)",
+        value=f"{weighted_avg_rating:.2f} ★",
+        delta=f"{avg_diff:+.2f} latest year",
     )
 
 st.markdown("")
