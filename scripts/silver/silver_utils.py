@@ -822,9 +822,9 @@ def write_incremental_merge(
     source_view = f"_merge_source_{full_table_name.replace('.', '_')}"
     df_deduped.createOrReplaceTempView(source_view)
 
-    # Build ON clause for SCD2 natural key
+    # Build ON clause for SCD2 natural key (used in staging view INNER JOIN)
     nk_on_clause = " AND ".join(
-        f"target.{col} = staging.{col}" for col in scd2_natural_key
+        f"target.{col} = source.{col}" for col in scd2_natural_key
     )
 
     # Build ON clause for exact match (merge key = full event key)
