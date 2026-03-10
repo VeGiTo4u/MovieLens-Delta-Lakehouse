@@ -36,8 +36,8 @@ S3 (raw CSV)  →  Bronze (raw Delta)  →  Silver (clean + DQ-flagged)  →  Go
 
 ```
                     ┌──────────────────────────────────────────────────┐
-                    │              S3 (raw/)                          │
-                    │  movies.csv · ratings_YYYY.csv · tags_YYYY.csv  │
+                    │              S3 (raw/)                           │
+                    │  movies.csv · ratings_YYYY.csv · tags_YYYY.csv   │
                     └──────────────────────┬───────────────────────────┘
                                            │
                     ┌──────────────────────▼───────────────────────────┐
@@ -56,7 +56,7 @@ S3 (raw CSV)  →  Bronze (raw Delta)  →  Silver (clean + DQ-flagged)  →  Go
                     ┌──────────────────────▼───────────────────────────┐
                     │  GOLD — Star Schema                              │
                     │  SHA2-256 surrogate keys · FK validation via     │
-                    │  INNER JOIN · replaceWhere per partition          │
+                    │  INNER JOIN · replaceWhere per partition         │
                     └──────────────────────────────────────────────────┘
 ```
 
