@@ -77,10 +77,6 @@ fig_popular.update_traces(
 fig_popular.update_layout(
     **{**PLOTLY_LAYOUT, "margin": dict(t=20, b=30, l=250, r=20)},
     height=max(500, len(df_popular_sorted) * 22),
-    coloraxis_colorbar=dict(
-        title="Avg Rating",
-        title_font=dict(size=11, family="Fira Code, monospace"),
-        tick_font=dict(size=10),
-    ),
+    coloraxis_colorbar=dict(title="Avg Rating"),
 )
 st.plotly_chart(fig_popular, use_container_width=True)

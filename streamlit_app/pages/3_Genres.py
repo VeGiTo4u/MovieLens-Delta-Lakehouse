@@ -46,10 +46,7 @@ with col1:
         **{**PLOTLY_LAYOUT, "margin": dict(t=30, b=30, l=120, r=20)},
         height=550,
         title=dict(text="Ratings by Genre", font=dict(size=14, family="Fira Code, monospace")),
-        coloraxis_colorbar=dict(
-            title="Avg Rating",
-            title_font=dict(size=11, family="Fira Code, monospace"),
-        ),
+        coloraxis_colorbar=dict(title="Avg Rating"),
     )
     st.plotly_chart(fig_count, use_container_width=True)
 
@@ -74,10 +71,7 @@ with col2:
         **{**PLOTLY_LAYOUT, "margin": dict(t=30, b=30, l=120, r=20)},
         height=550,
         title=dict(text="Average Rating by Genre", font=dict(size=14, family="Fira Code, monospace")),
-        coloraxis_colorbar=dict(
-            title="Count",
-            title_font=dict(size=11, family="Fira Code, monospace"),
-        ),
+        coloraxis_colorbar=dict(title="Count"),
     )
     st.plotly_chart(fig_avg, use_container_width=True)
 
@@ -97,8 +91,6 @@ fig_heat = px.imshow(
 fig_heat.update_layout(
     **{**PLOTLY_LAYOUT, "margin": dict(t=30, b=30, l=120, r=20)},
     height=500,
-    coloraxis_colorbar=dict(
-        title_font=dict(size=11, family="Fira Code, monospace"),
-    ),
+    coloraxis_colorbar=dict(title="Ratings"),
 )
 st.plotly_chart(fig_heat, use_container_width=True)
