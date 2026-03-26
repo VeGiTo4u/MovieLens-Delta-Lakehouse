@@ -9,20 +9,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from data_loader import load_release_decade_analysis, load_top_genome_tags
+from theme import inject_theme, section_header, PLOTLY_LAYOUT, CHART_GRADIENT, COLORS
 
 st.set_page_config(page_title="Content DNA | MovieLens", page_icon="M", layout="wide")
-
-st.markdown("""
-<style>
-    .section-header {
-        font-size: 1.4rem; font-weight: 600; color: #FAFAFA;
-        margin: 1.5rem 0 0.5rem 0; padding-bottom: 0.3rem;
-        border-bottom: 2px solid rgba(108,99,255,0.4);
-    }
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-</style>
-""", unsafe_allow_html=True)
+inject_theme()
 
 st.markdown("# Content DNA")
 st.markdown("How does era affect ratings? What genome tags define the catalog?")
@@ -32,12 +22,11 @@ st.markdown("")
 df_decades = load_release_decade_analysis()
 df_tags = load_top_genome_tags()
 
-# Filter out very early movies (1800s/1900s/1910s) which have low volume 
-# and skew the "Best Rated Decade" metric (e.g., 1940s appearing artificially high).
+# Filter out very early movies (1800s/1900s/1910s) which have low volume
 df_decades = df_decades[df_decades["decade"] >= "1920s"]
 
 # ── Release Decade Analysis ──────────────────────────────────
-st.markdown('<p class="section-header">Ratings by Movie Release Decade</p>', unsafe_allow_html=True)
+st.markdown(section_header("Ratings by Movie Release Decade", "volume vs. quality"), unsafe_allow_html=True)
 
 fig_decade = make_subplots(specs=[[{"secondary_y": True}]])
 
@@ -46,7 +35,7 @@ fig_decade.add_trace(
         x=df_decades["decade"],
         y=df_decades["total_ratings"],
         name="Total Ratings",
-        marker_color="rgba(108,99,255,0.6)",
+        marker_color="rgba(108,99,255,0.50)",
         marker_line_width=0,
     ),
     secondary_y=False,
@@ -58,20 +47,15 @@ fig_decade.add_trace(
         y=df_decades["avg_rating"],
         name="Avg Rating",
         mode="lines+markers",
-        line=dict(color="#A78BFA", width=3),
-        marker=dict(size=8, color="#C4B5FD"),
+        line=dict(color=COLORS["accent"], width=3, shape="spline"),
+        marker=dict(size=9, color="#C4B5FD", line=dict(width=2, color=COLORS["accent"])),
     ),
     secondary_y=True,
 )
 
 fig_decade.update_layout(
-    template="plotly_dark",
-    paper_bgcolor="rgba(0,0,0,0)",
-    plot_bgcolor="rgba(0,0,0,0)",
+    **PLOTLY_LAYOUT,
     height=450,
-    margin=dict(t=30, b=60),
-    legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center"),
-    font=dict(family="Inter, sans-serif"),
     hovermode="x unified",
 )
 fig_decade.update_yaxes(title_text="Total Ratings", secondary_y=False)
@@ -93,7 +77,7 @@ with col3:
 st.markdown("")
 
 # ── Genome Tags ──────────────────────────────────────────────
-st.markdown('<p class="section-header">Top 20 Genome Tags by Relevance</p>', unsafe_allow_html=True)
+st.markdown(section_header("Top 20 Genome Tags by Relevance"), unsafe_allow_html=True)
 
 df_tags_sorted = df_tags.sort_values("avg_relevance", ascending=True)
 
@@ -103,21 +87,18 @@ fig_tags = px.bar(
     y="tag",
     orientation="h",
     color="avg_relevance",
-    color_continuous_scale=["#1E1B4B", "#4338CA", "#6C63FF", "#A78BFA"],
+    color_continuous_scale=CHART_GRADIENT,
     custom_data=["movie_count"],
     labels={"avg_relevance": "Avg Relevance", "tag": ""},
 )
 fig_tags.update_traces(
     hovertemplate="<b>%{y}</b><br>Avg Relevance: %{x:.4f}<br>Movies: %{customdata[0]:,}<extra></extra>",
     marker_line_width=0,
+    marker_cornerradius=4,
 )
 fig_tags.update_layout(
-    template="plotly_dark",
-    paper_bgcolor="rgba(0,0,0,0)",
-    plot_bgcolor="rgba(0,0,0,0)",
+    **{**PLOTLY_LAYOUT, "margin": dict(t=20, b=30, l=200, r=20)},
     coloraxis_showscale=False,
     height=550,
-    margin=dict(t=20, b=30, l=200),
-    font=dict(family="Inter, sans-serif"),
 )
 st.plotly_chart(fig_tags, use_container_width=True)

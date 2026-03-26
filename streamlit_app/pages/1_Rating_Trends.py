@@ -8,21 +8,10 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from data_loader import load_rating_trends_monthly, load_yearly_summary
+from theme import inject_theme, section_header, PLOTLY_LAYOUT, COLORS
 
 st.set_page_config(page_title="Rating Trends | MovieLens", page_icon="M", layout="wide")
-
-# ── Custom CSS ───────────────────────────────────────────────
-st.markdown("""
-<style>
-    .section-header {
-        font-size: 1.4rem; font-weight: 600; color: #FAFAFA;
-        margin: 1.5rem 0 0.5rem 0; padding-bottom: 0.3rem;
-        border-bottom: 2px solid rgba(108,99,255,0.4);
-    }
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-</style>
-""", unsafe_allow_html=True)
+inject_theme()
 
 st.markdown("# Rating Trends")
 st.markdown("How have ratings evolved month-over-month and year-over-year?")
@@ -33,7 +22,7 @@ df_monthly = load_rating_trends_monthly()
 df_yearly = load_yearly_summary()
 
 # ── Monthly Trends — Dual Axis ───────────────────────────────
-st.markdown('<p class="section-header">Monthly Rating Trends</p>', unsafe_allow_html=True)
+st.markdown(section_header("Monthly Rating Trends", "volume vs. quality"), unsafe_allow_html=True)
 
 df_monthly["date_label"] = (
     df_monthly["year"].astype(str) + "-" + df_monthly["month"].astype(str).str.zfill(2)
@@ -47,7 +36,7 @@ fig.add_trace(
         x=df_monthly["date_label"],
         y=df_monthly["rating_count"],
         name="Rating Count",
-        marker_color="rgba(108,99,255,0.35)",
+        marker_color="rgba(108,99,255,0.30)",
         marker_line_width=0,
     ),
     secondary_y=False,
@@ -59,20 +48,17 @@ fig.add_trace(
         x=df_monthly["date_label"],
         y=df_monthly["avg_rating"],
         name="Avg Rating",
-        line=dict(color="#A78BFA", width=2.5),
+        line=dict(color=COLORS["accent"], width=2.5, shape="spline"),
         mode="lines",
+        fill="tonexty",
+        fillcolor="rgba(167,139,250,0.06)",
     ),
     secondary_y=True,
 )
 
 fig.update_layout(
-    template="plotly_dark",
-    paper_bgcolor="rgba(0,0,0,0)",
-    plot_bgcolor="rgba(0,0,0,0)",
+    **PLOTLY_LAYOUT,
     height=450,
-    margin=dict(t=30, b=60),
-    legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center"),
-    font=dict(family="Inter, sans-serif"),
     hovermode="x unified",
 )
 fig.update_yaxes(title_text="Rating Count", secondary_y=False)
@@ -81,7 +67,7 @@ fig.update_yaxes(title_text="Avg Rating", secondary_y=True, range=[2.5, 5.0])
 st.plotly_chart(fig, use_container_width=True)
 
 # ── Monthly Users & Movies ───────────────────────────────────
-st.markdown('<p class="section-header">Monthly Unique Users & Movies</p>', unsafe_allow_html=True)
+st.markdown(section_header("Monthly Unique Users & Movies"), unsafe_allow_html=True)
 
 col1, col2 = st.columns(2)
 
@@ -91,18 +77,14 @@ with col1:
         x=df_monthly["date_label"],
         y=df_monthly["unique_users"],
         fill="tozeroy",
-        fillcolor="rgba(108,99,255,0.15)",
-        line=dict(color="#6C63FF", width=2),
+        fillcolor="rgba(108,99,255,0.12)",
+        line=dict(color=COLORS["primary"], width=2, shape="spline"),
         name="Unique Users",
     ))
     fig_users.update_layout(
-        template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
+        **PLOTLY_LAYOUT,
         height=300,
-        margin=dict(t=30, b=50),
-        title=dict(text="Unique Users per Month", font=dict(size=14)),
-        font=dict(family="Inter, sans-serif"),
+        title=dict(text="Unique Users per Month", font=dict(size=14, family="Fira Code, monospace")),
     )
     st.plotly_chart(fig_users, use_container_width=True)
 
@@ -112,23 +94,19 @@ with col2:
         x=df_monthly["date_label"],
         y=df_monthly["unique_movies"],
         fill="tozeroy",
-        fillcolor="rgba(167,139,250,0.15)",
-        line=dict(color="#A78BFA", width=2),
+        fillcolor="rgba(167,139,250,0.12)",
+        line=dict(color=COLORS["accent"], width=2, shape="spline"),
         name="Unique Movies",
     ))
     fig_movies.update_layout(
-        template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
+        **PLOTLY_LAYOUT,
         height=300,
-        margin=dict(t=30, b=50),
-        title=dict(text="Unique Movies Rated per Month", font=dict(size=14)),
-        font=dict(family="Inter, sans-serif"),
+        title=dict(text="Unique Movies Rated per Month", font=dict(size=14, family="Fira Code, monospace")),
     )
     st.plotly_chart(fig_movies, use_container_width=True)
 
 # ── Yearly Summary Table ─────────────────────────────────────
-st.markdown('<p class="section-header">Yearly Summary</p>', unsafe_allow_html=True)
+st.markdown(section_header("Yearly Summary"), unsafe_allow_html=True)
 
 df_display = df_yearly.sort_values("year", ascending=False).copy()
 df_display.columns = [
