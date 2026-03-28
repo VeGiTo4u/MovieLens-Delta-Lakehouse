@@ -202,9 +202,13 @@ Bronze._job_run_id  →  which Bronze Databricks Job run
 ### `post_write_validation_gold()`
 - Logs expected record count (from write metrics or MERGE operation metrics)
 - **PK uniqueness check:** `groupBy(pk_columns).count()` → `agg(sum(when(count > 1, 1)))` — single Spark action
-- Single-pass NULL check on Gold metadata columns
-- Fails hard on PK violations or NULL metadata
-- Note: `_source_silver_version` is exempt from NULL check (intentionally NULL for dim_date)
+- Optional single-pass required non-null check for fact-level contract columns (e.g. `movie_sk`, `user_id`)
+- Optional FK integrity checks via `left_anti` on distinct FK values against referenced dimension keys
+- Metadata completeness checks:
+  - `_source_table` and `_job_run_id` must be non-null and non-blank
+  - `_source_silver_version` must be non-null for sourced rows
+  - `_source_silver_version` may be NULL only when `_source_table = 'GENERATED'` (dim_date)
+- Fails hard on PK, required non-null, FK, or metadata violations
 
 ---
 
