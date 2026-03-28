@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 
 S3_BUCKET = os.environ.get("S3_BUCKET", "movielens-data-store")
 S3_PREFIX = os.environ.get("S3_PREFIX", "analytics/")
-LOCAL_DIR = os.environ.get("LOCAL_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
+LOCAL_DIR = os.environ.get("LOCAL_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"))
 MANIFEST  = os.path.join(LOCAL_DIR, ".sync_manifest.json")
 
 # Expected KPI directories (Spark writes each as a folder)

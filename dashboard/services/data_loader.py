@@ -13,7 +13,7 @@ import os
 import streamlit as st
 import duckdb
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 
 
 def _query(kpi_dir: str) -> "pd.DataFrame":
