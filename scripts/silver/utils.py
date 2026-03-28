@@ -1017,6 +1017,12 @@ def post_write_validation(
     print(f"[INFO]  Expected records (from Delta log): {expected_count:,}")
 
     try:
+        if expected_count == 0:
+            raise ValueError(
+                "FAILED: Zero records committed according to Delta log. "
+                "Aborting to prevent silent empty-table propagation."
+            )
+
         df_val = spark.table(target_full_table_name)
 
         meta_cols = [
