@@ -38,7 +38,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }} 
         run: |
-          python streamlit_app/sync_data.py
+          python dashboard/services/sync_data.py
 
       - name: Commit and Push Changes if Any
         run: |
@@ -47,7 +47,7 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
           # Add the data directory
-          git add streamlit_app/data/
+          git add dashboard/data/
           
           # Check if there are actual changes
           if ! git diff-index --quiet HEAD; then
