@@ -1,0 +1,13 @@
+{
+  "all_time_summary.parquet/part-00000-tid-8103499153993376185-e0033cf1-4fa3-4eec-bfba-1000e61bc7cf-540-1.c000.snappy.parquet": "\"a0443f1058fa4025785b25992becd892\"",
+  "rating_trends_monthly.parquet/part-00000-tid-3207199988462682040-edeb00f1-415a-48de-9f53-091f78671003-572-1.c000.snappy.parquet": "\"feaa260770852f7b60a23962eecbb1a6\"",
+  "genre_performance.parquet/part-00000-tid-5561794237289735157-823200ba-6c59-4e22-8396-933b62b29dca-606-1.c000.snappy.parquet": "\"d7f480f8d9ca52263f59839602c3e787\"",
+  "top_rated_movies.parquet/part-00000-tid-6542568914778093411-05718ab4-14fb-468f-9614-cac49403a467-632-1.c000.snappy.parquet": "\"496a289c30f0c0446fdc912907d6c894\"",
+  "most_popular_movies.parquet/part-00000-tid-3683064097879067678-63426bd3-297c-4b62-8853-aed84acac8fa-656-1.c000.snappy.parquet": "\"382149ad5cdc04e10c5b70dae9db7ddd\"",
+  "genre_trends_yearly.parquet/part-00000-tid-8122931997080499115-b35c1da5-5347-4c67-85cd-49b4bf06fce4-684-1.c000.snappy.parquet": "\"8e1828946efa8d6c08ab9bbae833f490\"",
+  "user_activity_distribution.parquet/part-00000-tid-7569386653261788753-1a7f6c49-2dcd-4d44-a756-9ac796ca03c2-717-1.c000.snappy.parquet": "\"09c0194f5defc8a51a29ae04aacdcfce\"",
+  "rating_distribution.parquet/part-00000-tid-5403599272834667883-b166d930-b4b6-40f1-b5dc-9732674840d4-740-1.c000.snappy.parquet": "\"8cdd341ac95c8097b5f76307bac1e6f0\"",
+  "yearly_summary.parquet/part-00000-tid-2120343215234376981-6a9f04c3-ea02-4c00-ab83-781f1e2030e7-785-1.c000.snappy.parquet": "\"16779208d20a148eb5e4cc8cd65f01f8\"",
+  "release_decade_analysis.parquet/part-00000-tid-564443073847782038-3b8c7acc-0626-4fd9-8484-b8ec8e998186-817-1.c000.snappy.parquet": "\"0b14c8dda29efa62e157166051d66aef\"",
+  "top_genome_tags.parquet/part-00000-tid-7548588817194070508-8a58ceec-810d-46f9-8bed-3d602e6dc367-834-1.c000.snappy.parquet": "\"cd3d317a328cd13358c1f53626e92061\""
+}
