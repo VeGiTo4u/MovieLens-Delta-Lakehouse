@@ -6,8 +6,8 @@ Main entry page showing high-level KPI cards and rating distribution.
 
 import streamlit as st
 import plotly.express as px
-from data_loader import load_yearly_summary, load_rating_distribution, load_all_time_summary
-from theme import inject_theme, section_header, sidebar_badges, PLOTLY_LAYOUT, CHART_GRADIENT
+from services.data_loader import load_yearly_summary, load_rating_distribution, load_all_time_summary
+from config.theme import inject_theme, section_header, sidebar_badges, PLOTLY_LAYOUT, CHART_GRADIENT
 
 # ── Page Config ──────────────────────────────────────────────
 st.set_page_config(

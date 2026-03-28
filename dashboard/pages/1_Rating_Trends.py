@@ -7,8 +7,8 @@ Monthly rating trends (line + bar) and yearly summary table.
 import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from data_loader import load_rating_trends_monthly, load_yearly_summary
-from theme import inject_theme, section_header, PLOTLY_LAYOUT, COLORS
+from services.data_loader import load_rating_trends_monthly, load_yearly_summary
+from config.theme import inject_theme, section_header, PLOTLY_LAYOUT, COLORS
 
 st.set_page_config(page_title="Rating Trends | MovieLens", page_icon="M", layout="wide")
 inject_theme()

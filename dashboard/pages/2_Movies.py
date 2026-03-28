@@ -6,8 +6,8 @@ Top 30 highest rated movies and top 30 most popular movies.
 
 import streamlit as st
 import plotly.express as px
-from data_loader import load_top_rated_movies, load_most_popular_movies
-from theme import inject_theme, section_header, PLOTLY_LAYOUT, CHART_GRADIENT
+from services.data_loader import load_top_rated_movies, load_most_popular_movies
+from config.theme import inject_theme, section_header, PLOTLY_LAYOUT, CHART_GRADIENT
 
 st.set_page_config(page_title="Movies | MovieLens", page_icon="M", layout="wide")
 inject_theme()

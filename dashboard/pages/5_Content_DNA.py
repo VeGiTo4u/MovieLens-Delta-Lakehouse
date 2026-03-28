@@ -8,8 +8,8 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from data_loader import load_release_decade_analysis, load_top_genome_tags
-from theme import inject_theme, section_header, PLOTLY_LAYOUT, CHART_GRADIENT, COLORS
+from services.data_loader import load_release_decade_analysis, load_top_genome_tags
+from config.theme import inject_theme, section_header, PLOTLY_LAYOUT, CHART_GRADIENT, COLORS
 
 st.set_page_config(page_title="Content DNA | MovieLens", page_icon="M", layout="wide")
 inject_theme()

@@ -6,8 +6,8 @@ Genre performance breakdown and genre popularity trends over time.
 
 import streamlit as st
 import plotly.express as px
-from data_loader import load_genre_performance, load_genre_trends_yearly
-from theme import inject_theme, section_header, PLOTLY_LAYOUT, CHART_GRADIENT
+from services.data_loader import load_genre_performance, load_genre_trends_yearly
+from config.theme import inject_theme, section_header, PLOTLY_LAYOUT, CHART_GRADIENT
 
 st.set_page_config(page_title="Genres | MovieLens", page_icon="M", layout="wide")
 inject_theme()
