@@ -204,54 +204,14 @@ df_gold = append_gold_metadata(
 # COMMAND ----------
 
 # ------------------------------------------------------------
-# Write via full overwrite + mergeSchema
-#
-# Architecture simplification (post-refactor):
-#   Previously this was MERGE (write_gold_merge) to handle
-#   late arrivals routing to the correct rating_year partition.
-#   Now Silver MERGE already placed every record in the correct
-#   rating_year partition. Gold writes a simple full overwrite
-#   partitioned by rating_year.
-#
-#   Why full overwrite is safe:
-#     - All Silver data (cumulative) is read for new batches
-#     - Dimension joins are deterministic (SHA2 surrogate keys)
-#     - mergeSchema catches any destructive schema changes
+# Write per rating_year via shared helper (replaceWhere)
 # ------------------------------------------------------------
-from delta.tables import DeltaTable
-
-is_new_table = not DeltaTable.isDeltaTable(spark, s3_target_path)
-
-# Collect the distinct rating_years being written
-writing_years = sorted({row["rating_year"] for row in year_dist_rows})
-print(f"[INFO] Writing to rating_year partitions: {writing_years}")
-
-# Write per rating_year using replaceWhere for partition-safe idempotency
-total_written = 0
-for r_year in writing_years:
-    df_year = df_gold.filter(F.col("rating_year") == r_year)
-
-    writer = (
-        df_year.write
-               .format("delta")
-               .mode("overwrite")
-               .option("replaceWhere", f"rating_year = {r_year}")
-               .option("mergeSchema", "true")
-    )
-
-    if is_new_table:
-        writer = writer.partitionBy("rating_year")
-
-    writer.save(s3_target_path)
-
-    # After first write, table exists
-    if is_new_table:
-        register_table(target_full, s3_target_path)
-        is_new_table = False
-
-    year_count = _read_write_metrics(s3_target_path)
-    total_written += year_count if year_count > 0 else 0
-    print(f"[SUCCESS] rating_year={r_year}: {year_count:,} rows written")
+total_written = write_gold_ratings_replacewhere_partitions(
+    df=df_gold,
+    full_table_name=target_full,
+    s3_target_path=s3_target_path,
+    partition_col="rating_year",
+)
 
 # COMMAND ----------
 
@@ -283,7 +243,15 @@ total_gold_count = coverage["total_rows"]
 post_write_validation_gold(
     target_full,
     expected_count = total_written,
-    pk_columns     = ["user_id", "movie_sk", "interaction_timestamp"]
+    pk_columns     = ["user_id", "movie_sk", "interaction_timestamp"],
+    required_non_null_cols = ["movie_sk", "user_id"],
+    fk_checks = [
+        {
+            "fk_column": "movie_sk",
+            "reference_table": dim_movies_full,
+            "reference_column": "movie_sk",
+        }
+    ],
 )
 
 # COMMAND ----------

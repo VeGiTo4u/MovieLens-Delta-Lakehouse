@@ -19,7 +19,7 @@
 #   write_gold_merge()             — MERGE upsert for late-arrival-safe incremental writes
 #   (OPTIMIZE/ANALYZE/VACUUM are now in maintenance/maintenance_utils.py)
 #   register_table()               — CREATE TABLE IF NOT EXISTS
-#   post_write_validation_gold()   — PK uniqueness + metadata NULL check
+#   post_write_validation_gold()   — Gold contracts (PK, non-null, FK, metadata)
 #   print_summary()                — standardized run summary
 # ============================================================
 
@@ -536,6 +536,63 @@ def write_gold(
 # COMMAND ----------
 
 # ------------------------------------------------------------
+# write_gold_ratings_replacewhere_partitions
+# ------------------------------------------------------------
+def write_gold_ratings_replacewhere_partitions(
+    df:               DataFrame,
+    full_table_name:  str,
+    s3_target_path:   str,
+    partition_col:    str = "rating_year",
+) -> int:
+    """
+    Writes fact_ratings by replacing only touched event-year partitions.
+
+    This keeps reruns idempotent and avoids rewriting untouched years.
+    On first write only, partitionBy(partition_col) is applied to define
+    table layout; subsequent writes rely on existing Delta metadata.
+
+    Returns:
+        Total rows reported committed across the partition writes.
+    """
+    from delta.tables import DeltaTable
+
+    year_rows = df.select(partition_col).distinct().collect()
+    writing_years = sorted({row[partition_col] for row in year_rows if row[partition_col] is not None})
+    if not writing_years:
+        print(f"[WARN] No {partition_col} values found — skipping write")
+        return 0
+
+    is_new_table = not DeltaTable.isDeltaTable(spark, s3_target_path)
+    print(f"[INFO] Writing to {partition_col} partitions: {writing_years}")
+
+    total_written = 0
+    for year_val in writing_years:
+        df_year = df.filter(F.col(partition_col) == year_val)
+        writer = (
+            df_year.write
+                   .format("delta")
+                   .mode("overwrite")
+                   .option("replaceWhere", f"{partition_col} = {year_val}")
+                   .option("mergeSchema", "true")
+        )
+        if is_new_table:
+            writer = writer.partitionBy(partition_col)
+
+        writer.save(s3_target_path)
+
+        if is_new_table:
+            register_table(full_table_name, s3_target_path)
+            is_new_table = False
+
+        year_count = _read_write_metrics(s3_target_path)
+        total_written += year_count if year_count > 0 else 0
+        print(f"[SUCCESS] {partition_col}={year_val}: {year_count:,} rows written")
+
+    return total_written
+
+# COMMAND ----------
+
+# ------------------------------------------------------------
 # write_gold_merge
 # ------------------------------------------------------------
 def write_gold_merge(
@@ -773,6 +830,8 @@ def post_write_validation_gold(
     full_table_name: str,
     expected_count:  int,
     pk_columns:      List[str],
+    required_non_null_cols: Optional[List[str]] = None,
+    fk_checks: Optional[List[Dict[str, str]]] = None,
 ) -> None:
     """
     Validates the registered Gold table after write.
@@ -784,7 +843,9 @@ def post_write_validation_gold(
          This is the first-class correctness check for Gold tables
          that feed BI and ML. A PK violation here means the pipeline
          produced incorrect data.
-      3. All ETL metadata columns are present and non-NULL.
+      3. Required non-null columns are populated (for fact-level contracts).
+      4. Foreign keys resolve to their referenced dimension keys.
+      5. Gold metadata completeness rules.
 
     Why the count re-scan was removed:
         The old implementation called df_val.count() and compared it
@@ -801,14 +862,27 @@ def post_write_validation_gold(
         the final aggregation is a narrow transformation on a small
         grouped result and adds negligible overhead.
 
-    pk_columns: list of column names forming the primary key.
-    For composite PKs pass multiple columns e.g. ["movie_id", "tag_id"].
+    pk_columns:
+        list of column names forming the primary key.
+        For composite PKs pass multiple columns e.g. ["movie_id", "tag_id"].
+    required_non_null_cols:
+        optional list of columns that must be non-NULL.
+    fk_checks:
+        optional list of FK check dicts:
+          {
+            "fk_column": "movie_sk",
+            "reference_table": "movielens.gold.dim_movies",
+            "reference_column": "movie_sk",
+          }
 
     Fails hard on any violation — Gold tables feed BI and ML.
     A corrupted Gold table is worse than a failed pipeline.
     """
     print("[START] Post-write validation")
     print(f"[INFO]  Expected records (from write operation): {expected_count:,}")
+
+    required_non_null_cols = required_non_null_cols or []
+    fk_checks = fk_checks or []
 
     df_val = spark.table(full_table_name)
 
@@ -830,33 +904,114 @@ def post_write_validation_gold(
         )
     print(f"[PASS] PK uniqueness ({', '.join(pk_columns)}): no duplicates")
 
-    # Check 2: ETL metadata columns non-NULL — single-pass agg
-    meta_cols = [
-        "_source_table",
-        "_job_run_id",
-        "_notebook_path",
-        "_model_version",
-        "_aggregation_timestamp",
-    ]
-    # _source_silver_version is intentionally NULL for generated tables (dim_date)
-    # so we do not assert non-NULL on it
+    # Check 2 + Check 5: required non-null + metadata contracts in one Spark action
+    source_table_trim = F.trim(F.col("_source_table"))
+    source_is_generated = F.coalesce(source_table_trim == F.lit("GENERATED"), F.lit(False))
 
-    null_counts = df_val.select([
+    null_agg_exprs = [
         F.count(F.when(F.col(c).isNull(), 1)).alias(c)
-        for c in meta_cols
-    ]).collect()[0]
+        for c in required_non_null_cols
+    ] + [
+        # _source_table and _job_run_id must be non-null and non-blank
+        F.count(
+            F.when(
+                F.col("_source_table").isNull() | (source_table_trim == ""),
+                1,
+            )
+        ).alias("_source_table_invalid"),
+        F.count(
+            F.when(
+                F.col("_job_run_id").isNull() | (F.trim(F.col("_job_run_id")) == ""),
+                1,
+            )
+        ).alias("_job_run_id_invalid"),
+        # Keep existing non-null checks for shared metadata columns
+        F.count(F.when(F.col("_notebook_path").isNull(), 1)).alias("_notebook_path"),
+        F.count(F.when(F.col("_model_version").isNull(), 1)).alias("_model_version"),
+        F.count(F.when(F.col("_aggregation_timestamp").isNull(), 1)).alias("_aggregation_timestamp"),
+        # _source_silver_version is nullable only for GENERATED rows (dim_date)
+        F.count(
+            F.when((~source_is_generated) & F.col("_source_silver_version").isNull(), 1)
+        ).alias("_source_silver_version_invalid"),
+    ]
 
-    all_passed = True
-    for col_name in meta_cols:
-        null_count = null_counts[col_name]
-        status     = "[PASS]" if null_count == 0 else "[FAIL]"
+    null_counts = df_val.select(null_agg_exprs).collect()[0]
+
+    required_failures = []
+    for col_name in required_non_null_cols:
+        null_count = int(null_counts[col_name] or 0)
+        status = "[PASS]" if null_count == 0 else "[FAIL]"
+        print(f"  {status} required non-null {col_name}: {null_count:,} NULLs")
         if null_count > 0:
-            all_passed = False
-        print(f"  {status} {col_name}: {null_count:,} NULLs")
+            required_failures.append(f"{col_name}={null_count:,}")
 
-    if not all_passed:
+    metadata_checks = [
+        ("_source_table", "_source_table_invalid", "invalid (NULL/blank)"),
+        ("_job_run_id", "_job_run_id_invalid", "invalid (NULL/blank)"),
+        ("_notebook_path", "_notebook_path", "NULLs"),
+        ("_model_version", "_model_version", "NULLs"),
+        ("_aggregation_timestamp", "_aggregation_timestamp", "NULLs"),
+        ("_source_silver_version", "_source_silver_version_invalid", "invalid for sourced rows"),
+    ]
+
+    metadata_failures = []
+    for display_name, agg_col, label in metadata_checks:
+        invalid_count = int(null_counts[agg_col] or 0)
+        status = "[PASS]" if invalid_count == 0 else "[FAIL]"
+        print(f"  {status} {display_name}: {invalid_count:,} {label}")
+        if invalid_count > 0:
+            metadata_failures.append(f"{display_name}={invalid_count:,}")
+
+    if required_failures:
         raise ValueError(
-            "FAILED: NULL values found in ETL metadata columns."
+            "FAILED: required non-null column violations: "
+            + ", ".join(required_failures)
+        )
+
+    if metadata_failures:
+        raise ValueError(
+            "FAILED: Gold metadata validation failed: "
+            + ", ".join(metadata_failures)
+        )
+
+    # Check 4: FK referential integrity via distinct left_anti check(s)
+    for fk_check in fk_checks:
+        fk_column = fk_check.get("fk_column")
+        reference_table = fk_check.get("reference_table")
+        reference_column = fk_check.get("reference_column")
+
+        if not all([fk_column, reference_table, reference_column]):
+            raise ValueError(
+                f"FAILED: Invalid fk_checks config: {fk_check}. "
+                "Expected keys: fk_column, reference_table, reference_column."
+            )
+
+        fk_distinct = (
+            df_val
+            .select(F.col(fk_column).alias("__fk_value"))
+            .where(F.col("__fk_value").isNotNull())
+            .distinct()
+        )
+        ref_distinct = (
+            spark.table(reference_table)
+                 .select(F.col(reference_column).alias("__ref_value"))
+                 .distinct()
+        )
+
+        orphan_count = (
+            fk_distinct
+            .join(ref_distinct, fk_distinct["__fk_value"] == ref_distinct["__ref_value"], "left_anti")
+            .count()
+        )
+
+        if orphan_count > 0:
+            raise ValueError(
+                f"FAILED: FK violation — {orphan_count:,} orphan values in "
+                f"'{fk_column}' not found in '{reference_table}.{reference_column}'."
+            )
+        print(
+            f"[PASS] FK {fk_column} -> {reference_table}.{reference_column}: "
+            "no orphan values"
         )
 
     print("[SUCCESS] Post-write validation passed")
@@ -915,6 +1070,7 @@ for fn in [
     "generate_surrogate_key()",
     "append_gold_metadata()",
     "write_gold()",
+    "write_gold_ratings_replacewhere_partitions()",
     "write_gold_merge()",
     "register_table()",
     "post_write_validation_gold()",
