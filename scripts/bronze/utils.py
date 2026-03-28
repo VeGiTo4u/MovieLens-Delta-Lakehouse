@@ -545,6 +545,12 @@ def post_write_validation_bronze(
     print(f"[INFO]  Expected records (from Delta log): {expected_count:,}")
 
     try:
+        if expected_count == 0:
+            raise ValueError(
+                "FAILED: Zero records committed according to Delta log. "
+                "Aborting to prevent silent empty-table propagation."
+            )
+
         # Scope to processed years for incremental tables — avoids
         # scanning partitions from previous runs unnecessarily
         if processed_years:
