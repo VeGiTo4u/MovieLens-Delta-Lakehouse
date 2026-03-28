@@ -53,3 +53,7 @@ streamlit_app/data/.sync_manifest.json
 
 # MCP config (contains secrets)
 .config/
+
+# Pytest and logging artifacts
+*.log
+.pytest_cache/

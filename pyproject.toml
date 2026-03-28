@@ -1,0 +1,25 @@
+[project]
+name = "movielens-delta-lakehouse"
+version = "1.0.0"
+description = "Production-grade Delta Lake Lakehouse pipeline over MovieLens dataset"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "pytest-spark>=0.6",
+    "pyspark>=3.5",
+    "chispa>=0.10",
+    "delta-spark>=3.2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: Pure transformation logic tests — no I/O, no Delta, no S3 (fast, local Spark)",
+    "integration: Tests requiring Delta Lake read/write on local filesystem (medium speed)",
+    "contract: Data quality contract validation — verifies DQ rules flag/pass correctly (fast, local Spark)",
+]
+# Run unit tests by default when no marker is specified
+addopts = "-v --tb=short"
+pythonpath = [".", "scripts"]
