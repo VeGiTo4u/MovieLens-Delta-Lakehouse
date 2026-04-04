@@ -6,59 +6,13 @@ Tests: special char removal, title-casing, timestamp conversion,
 """
 import pytest
 from datetime import datetime
-from pyspark.sql import functions as F
-from pyspark.sql.types import (
-    StructType, StructField, IntegerType, StringType, TimestampType, LongType,
+
+from tests.conftest import apply_dq_flags
+from tests.helpers.silver_mirrors import (
+    make_bronze_tags_df as _make,
+    tags_dq_rules as get_dq_rules,
+    transform_tags,
 )
-
-
-def transform_tags(df):
-    """Mirror of production transform_tags() from tags_data_cleaning.py."""
-    return (
-        df
-        .withColumn("user_id",  F.col("userId").cast(IntegerType()))
-        .withColumn("movie_id", F.col("movieId").cast(IntegerType()))
-        .withColumn("tag_raw",  F.col("tag").cast(StringType()))
-        .withColumn("tag", F.trim(F.regexp_replace(F.col("tag_raw"), r"[\n\t\r]+", " ")))
-        .withColumn("tag", F.regexp_replace(F.col("tag"), r"[^a-zA-Z0-9\s\-]", ""))
-        .withColumn("tag", F.regexp_replace(F.col("tag"), r"\s+", " "))
-        .withColumn("tag", F.initcap(F.trim(F.col("tag"))))
-        .withColumn("tag_timestamp",
-                    F.from_unixtime(F.col("timestamp")).cast(TimestampType()))
-        .withColumn("date_key",
-                    F.date_format(F.col("tag_timestamp"), "yyyyMMdd").cast(IntegerType()))
-        .select("user_id", "movie_id", "tag", "tag_timestamp", "date_key",
-                "_ingestion_timestamp")
-    )
-
-
-def get_dq_rules():
-    return [
-        ("NULL_USER_ID",  F.col("user_id").isNull()),
-        ("NULL_MOVIE_ID", F.col("movie_id").isNull()),
-        ("NULL_TAG",      F.col("tag").isNull()),
-        ("EMPTY_TAG",     F.trim(F.col("tag")) == ""),
-        ("NULL_TIMESTAMP", F.col("tag_timestamp").isNull()),
-        ("INVALID_TIMESTAMP_FLOOR",
-         F.col("tag_timestamp").isNotNull() &
-         (F.col("tag_timestamp") < F.lit("1995-01-01").cast(TimestampType()))),
-        ("SHORT_TAG",     F.length(F.col("tag")) < 3),
-        ("DATE_KEY_MISMATCH",
-         F.col("date_key") != F.date_format(F.col("tag_timestamp"), "yyyyMMdd").cast(IntegerType())),
-    ]
-
-
-BRONZE_SCHEMA = StructType([
-    StructField("userId",  StringType(), True),
-    StructField("movieId", StringType(), True),
-    StructField("tag",     StringType(), True),
-    StructField("timestamp", LongType(), True),
-    StructField("_ingestion_timestamp", TimestampType(), True),
-])
-
-
-def _make(spark, rows):
-    return spark.createDataFrame(rows, BRONZE_SCHEMA)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -66,6 +20,7 @@ def _make(spark, rows):
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.unit
 class TestSpecialCharRemoval:
+    """Tests verify the removal of non-alphanumeric special characters from raw tags."""
 
     def test_removes_exclamation(self, spark):
         r = transform_tags(_make(spark, [("1","1","awesome!",1640995200,datetime(2024,1,1))])).collect()[0]
@@ -97,6 +52,7 @@ class TestSpecialCharRemoval:
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.unit
 class TestTitleCasing:
+    """Tests verify the capitalization of tag strings to Title Case."""
 
     def test_lowercase_to_title(self, spark):
         r = transform_tags(_make(spark, [("1","1","dark comedy",1640995200,datetime(2024,1,1))])).collect()[0]
@@ -116,6 +72,7 @@ class TestTitleCasing:
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.unit
 class TestWhitespaceNormalization:
+    """Tests verify the collapsing of multiple spaces, tabs, and newlines."""
 
     def test_tabs_replaced(self, spark):
         r = transform_tags(_make(spark, [("1","1","dark\tcomedy",1640995200,datetime(2024,1,1))])).collect()[0]
@@ -139,6 +96,7 @@ class TestWhitespaceNormalization:
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.unit
 class TestTagTimestamp:
+    """Tests verify the conversion of Unix epochs to Timestamps and the derivation of date_key."""
 
     def test_epoch_to_timestamp(self, spark):
         r = transform_tags(_make(spark, [("1","1","tag",1640995200,datetime(2024,1,1))])).collect()[0]
@@ -159,6 +117,7 @@ class TestTagTimestamp:
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.unit
 class TestTagsOutputSchema:
+    """Tests verify that the output DataFrame strictly matches the expected Silver schema."""
 
     def test_output_columns(self, spark):
         result = transform_tags(_make(spark, [("1","1","tag",1640995200,datetime(2024,1,1))]))
@@ -176,39 +135,33 @@ class TestTagsOutputSchema:
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.contract
 class TestTagsDQRules:
+    """Tests validate the application of Data Quality (DQ) rules for tags."""
 
     def test_valid_passes(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_tags(_make(spark, [("1","1","funny movie",1640995200,datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert r["_dq_status"] == "PASS"
 
     def test_null_user_id(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_tags(_make(spark, [(None,"1","tag",1640995200,datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert "NULL_USER_ID" in r["_dq_failed_rules"]
 
     def test_null_movie_id(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_tags(_make(spark, [("1",None,"tag",1640995200,datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert "NULL_MOVIE_ID" in r["_dq_failed_rules"]
 
     def test_null_tag(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_tags(_make(spark, [("1","1",None,1640995200,datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert "NULL_TAG" in r["_dq_failed_rules"]
 
     def test_null_timestamp(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_tags(_make(spark, [("1","1","tag",None,datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert "NULL_TIMESTAMP" in r["_dq_failed_rules"]
 
     def test_epoch_zero_quarantines(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_tags(_make(spark, [("1","1","funny tag",0,datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert "INVALID_TIMESTAMP_FLOOR" in r["_dq_failed_rules"]
 
     def test_short_tag_quarantines(self, spark):
         """Tag shorter than 3 chars → SHORT_TAG fires."""
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_tags(_make(spark, [("1","1","ab",1640995200,datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert "SHORT_TAG" in r["_dq_failed_rules"]

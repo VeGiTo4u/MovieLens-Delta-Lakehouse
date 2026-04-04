@@ -176,3 +176,176 @@ def movies_dq_rules():
             F.col("release_year").isNotNull() & ~F.col("release_year").between(1800, 2199),
         ),
     ]
+
+
+# ────────────────────────────────────────────────────────────────
+# Tags
+# ────────────────────────────────────────────────────────────────
+
+BRONZE_TAGS_SCHEMA = StructType([
+    StructField("userId", StringType(), True),
+    StructField("movieId", StringType(), True),
+    StructField("tag", StringType(), True),
+    StructField("timestamp", LongType(), True),
+    StructField("_ingestion_timestamp", TimestampType(), True),
+])
+
+
+def make_bronze_tags_df(spark, rows, schema=None):
+    return spark.createDataFrame(rows, schema or BRONZE_TAGS_SCHEMA)
+
+
+def transform_tags(df):
+    """Mirror of production transform_tags() from tags_data_cleaning.py."""
+    return (
+        df
+        .withColumn("user_id",  F.col("userId").cast(IntegerType()))
+        .withColumn("movie_id", F.col("movieId").cast(IntegerType()))
+        .withColumn("tag_raw",  F.col("tag").cast(StringType()))
+        .withColumn("tag", F.trim(F.regexp_replace(F.col("tag_raw"), r"[\n\t\r]+", " ")))
+        .withColumn("tag", F.regexp_replace(F.col("tag"), r"[^a-zA-Z0-9\s\-]", ""))
+        .withColumn("tag", F.regexp_replace(F.col("tag"), r"\s+", " "))
+        .withColumn("tag", F.initcap(F.trim(F.col("tag"))))
+        .withColumn("tag_timestamp",
+                    F.from_unixtime(F.col("timestamp")).cast(TimestampType()))
+        .withColumn("date_key",
+                    F.date_format(F.col("tag_timestamp"), "yyyyMMdd").cast(IntegerType()))
+        .select("user_id", "movie_id", "tag", "tag_timestamp", "date_key",
+                "_ingestion_timestamp")
+    )
+
+
+def tags_dq_rules():
+    """Mirror of tags DQ rules from tags_data_cleaning.py."""
+    return [
+        ("NULL_USER_ID",  F.col("user_id").isNull()),
+        ("NULL_MOVIE_ID", F.col("movie_id").isNull()),
+        ("NULL_TAG",      F.col("tag").isNull()),
+        ("EMPTY_TAG",     F.trim(F.col("tag")) == ""),
+        ("NULL_TIMESTAMP", F.col("tag_timestamp").isNull()),
+        ("INVALID_TIMESTAMP_FLOOR",
+         F.col("tag_timestamp").isNotNull() &
+         (F.col("tag_timestamp") < F.lit("1995-01-01").cast(TimestampType()))),
+        ("SHORT_TAG",     F.length(F.col("tag")) < 3),
+        ("DATE_KEY_MISMATCH",
+         F.col("date_key") != F.date_format(F.col("tag_timestamp"), "yyyyMMdd").cast(IntegerType())),
+    ]
+
+
+# ────────────────────────────────────────────────────────────────
+# Links
+# ────────────────────────────────────────────────────────────────
+
+BRONZE_LINKS_SCHEMA = StructType([
+    StructField("movieId", StringType(), True),
+    StructField("imdbId",  StringType(), True),
+    StructField("tmdbId",  StringType(), True),
+    StructField("_ingestion_timestamp", TimestampType(), True),
+])
+
+
+def make_bronze_links_df(spark, rows, schema=None):
+    return spark.createDataFrame(rows, schema or BRONZE_LINKS_SCHEMA)
+
+
+def transform_links(df):
+    """Mirror of production transform_links() from links_data_cleaning.py."""
+    return (
+        df
+        .withColumn("movie_id", F.col("movieId").cast(IntegerType()))
+        .withColumn("imdb_id",  F.col("imdbId").cast(StringType()))
+        .withColumn("tmdb_id",  F.col("tmdbId").cast(StringType()))
+        .withColumn("imdb_id",
+                    F.when(F.col("imdb_id").isNotNull(),
+                           F.concat(F.lit("tt"), F.col("imdb_id"))
+                    ).otherwise(None))
+        .withColumn("has_external_ids",
+                    F.col("imdb_id").isNotNull() | F.col("tmdb_id").isNotNull())
+        .select("movie_id", "imdb_id", "tmdb_id", "has_external_ids",
+                "_ingestion_timestamp")
+    )
+
+
+def links_dq_rules():
+    """Mirror of links DQ rules from links_data_cleaning.py."""
+    return [
+        ("NULL_MOVIE_ID",    F.col("movie_id").isNull()),
+        ("NO_EXTERNAL_IDS",  ~F.col("has_external_ids")),
+    ]
+
+
+# ────────────────────────────────────────────────────────────────
+# Genome Scores
+# ────────────────────────────────────────────────────────────────
+
+BRONZE_GENOME_SCORES_SCHEMA = StructType([
+    StructField("movieId",   StringType(), True),
+    StructField("tagId",     StringType(), True),
+    StructField("relevance", StringType(), True),
+    StructField("_ingestion_timestamp", TimestampType(), True),
+])
+
+
+def make_bronze_genome_scores_df(spark, rows, schema=None):
+    return spark.createDataFrame(rows, schema or BRONZE_GENOME_SCORES_SCHEMA)
+
+
+def transform_genome_scores(df):
+    """Mirror of production transform_genome_scores() from genome_scores_data_cleaning.py."""
+    return (
+        df
+        .withColumn("movie_id",  F.col("movieId").cast(IntegerType()))
+        .withColumn("tag_id",    F.col("tagId").cast(IntegerType()))
+        .withColumn("relevance", F.col("relevance").cast(DoubleType()))
+        .withColumn("relevance", F.round(F.col("relevance"), 3))
+        .select("movie_id", "tag_id", "relevance", "_ingestion_timestamp")
+    )
+
+
+def genome_scores_dq_rules():
+    """Mirror of genome_scores DQ rules from genome_scores_data_cleaning.py."""
+    return [
+        ("NULL_MOVIE_ID",  F.col("movie_id").isNull()),
+        ("NULL_TAG_ID",    F.col("tag_id").isNull()),
+        ("NULL_RELEVANCE", F.col("relevance").isNull()),
+        ("INVALID_RELEVANCE_RANGE", ~F.col("relevance").between(0.0, 1.0)),
+    ]
+
+
+# ────────────────────────────────────────────────────────────────
+# Genome Tags
+# ────────────────────────────────────────────────────────────────
+
+BRONZE_GENOME_TAGS_SCHEMA = StructType([
+    StructField("tagId", StringType(), True),
+    StructField("tag",   StringType(), True),
+    StructField("_ingestion_timestamp", TimestampType(), True),
+])
+
+
+def make_bronze_genome_tags_df(spark, rows, schema=None):
+    return spark.createDataFrame(rows, schema or BRONZE_GENOME_TAGS_SCHEMA)
+
+
+def transform_genome_tags(df):
+    """Mirror of production transform_genome_tags() from genome_tags_data_cleaning.py."""
+    return (
+        df
+        .withColumn("tag_id",  F.col("tagId").cast(IntegerType()))
+        .withColumn("tag_raw", F.col("tag").cast(StringType()))
+        .withColumn("tag",
+                    F.trim(F.regexp_replace(
+                        F.regexp_replace(F.col("tag_raw"), r"[\n\t\r]+", " "),
+                        r"\s+", " ")))
+        .withColumn("tag", F.initcap(F.col("tag")))
+        .select("tag_id", "tag", "_ingestion_timestamp")
+    )
+
+
+def genome_tags_dq_rules():
+    """Mirror of genome_tags DQ rules from genome_tags_data_cleaning.py."""
+    return [
+        ("NULL_TAG_ID", F.col("tag_id").isNull()),
+        ("NULL_TAG",    F.col("tag").isNull()),
+        ("EMPTY_TAG",   F.trim(F.col("tag")) == ""),
+    ]

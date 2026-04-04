@@ -6,47 +6,14 @@ Tests: IMDB 'tt' prefix, TMDB ID handling, has_external_ids flag,
 """
 import pytest
 from datetime import datetime
-from pyspark.sql import functions as F
-from pyspark.sql.types import (
-    StructType, StructField, IntegerType, StringType, TimestampType, BooleanType,
+from pyspark.sql.types import BooleanType, StringType
+
+from tests.conftest import apply_dq_flags
+from tests.helpers.silver_mirrors import (
+    make_bronze_links_df as _make,
+    links_dq_rules as get_dq_rules,
+    transform_links,
 )
-
-
-def transform_links(df):
-    """Mirror of production transform_links() from links_data_cleaning.py."""
-    return (
-        df
-        .withColumn("movie_id", F.col("movieId").cast(IntegerType()))
-        .withColumn("imdb_id",  F.col("imdbId").cast(StringType()))
-        .withColumn("tmdb_id",  F.col("tmdbId").cast(StringType()))
-        .withColumn("imdb_id",
-                    F.when(F.col("imdb_id").isNotNull(),
-                           F.concat(F.lit("tt"), F.col("imdb_id"))
-                    ).otherwise(None))
-        .withColumn("has_external_ids",
-                    F.col("imdb_id").isNotNull() | F.col("tmdb_id").isNotNull())
-        .select("movie_id", "imdb_id", "tmdb_id", "has_external_ids",
-                "_ingestion_timestamp")
-    )
-
-
-def get_dq_rules():
-    return [
-        ("NULL_MOVIE_ID",    F.col("movie_id").isNull()),
-        ("NO_EXTERNAL_IDS",  ~F.col("has_external_ids")),
-    ]
-
-
-BRONZE_SCHEMA = StructType([
-    StructField("movieId", StringType(), True),
-    StructField("imdbId",  StringType(), True),
-    StructField("tmdbId",  StringType(), True),
-    StructField("_ingestion_timestamp", TimestampType(), True),
-])
-
-
-def _make(spark, rows):
-    return spark.createDataFrame(rows, BRONZE_SCHEMA)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -54,6 +21,7 @@ def _make(spark, rows):
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.unit
 class TestImdbIdFormatting:
+    """Tests verify the addition of the 'tt' prefix to imdbId to create the standard imdb_id."""
 
     def test_tt_prefix_added(self, spark):
         """imdbId '0114709' → 'tt0114709'"""
@@ -80,6 +48,7 @@ class TestImdbIdFormatting:
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.unit
 class TestTmdbIdHandling:
+    """Tests verify that tmdbId is correctly preserved and cast to a StringType."""
 
     def test_tmdb_preserved_as_string(self, spark):
         r = transform_links(_make(spark, [("1","0114709","862",datetime(2024,1,1))])).collect()[0]
@@ -95,6 +64,7 @@ class TestTmdbIdHandling:
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.unit
 class TestHasExternalIds:
+    """Tests verify the logic for the derived has_external_ids flag."""
 
     def test_both_ids_present(self, spark):
         r = transform_links(_make(spark, [("1","0114709","862",datetime(2024,1,1))])).collect()[0]
@@ -118,6 +88,7 @@ class TestHasExternalIds:
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.unit
 class TestLinksOutputSchema:
+    """Tests verify that the output DataFrame strictly matches the expected Silver schema."""
 
     def test_output_columns(self, spark):
         result = transform_links(_make(spark, [("1","0114709","862",datetime(2024,1,1))]))
@@ -140,24 +111,21 @@ class TestLinksOutputSchema:
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.contract
 class TestLinksDQRules:
+    """Tests validate the application of Data Quality (DQ) rules for movie links."""
 
     def test_valid_passes(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_links(_make(spark, [("1","0114709","862",datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert r["_dq_status"] == "PASS"
 
     def test_null_movie_id(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_links(_make(spark, [(None,"0114709","862",datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert "NULL_MOVIE_ID" in r["_dq_failed_rules"]
 
     def test_no_external_ids_quarantines(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_links(_make(spark, [("1",None,None,datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert "NO_EXTERNAL_IDS" in r["_dq_failed_rules"]
 
     def test_imdb_only_passes(self, spark):
         """Having just IMDB ID is enough — should PASS."""
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_links(_make(spark, [("1","0114709",None,datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert r["_dq_status"] == "PASS"

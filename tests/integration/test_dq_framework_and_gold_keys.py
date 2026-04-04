@@ -264,7 +264,7 @@ class TestGoldPassThroughLogic:
         df = make_bronze_ratings_df(spark, rows)
         flagged = apply_dq_flags(transform_ratings(df), ratings_dq_rules())
 
-        gold_df = flagged.filter(F.col("_dq_status") == "PASS").filter(F.col("is_current") == True)
+        gold_df = flagged.filter(F.col("_dq_status") == "PASS").filter("is_current = true")
 
         assert gold_df.count() == 1
         row = gold_df.collect()[0]

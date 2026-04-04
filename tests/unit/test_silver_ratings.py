@@ -22,6 +22,7 @@ from pyspark.sql.types import (
     TimestampType,
 )
 
+from tests.conftest import apply_dq_flags
 from tests.helpers.silver_mirrors import (
     make_bronze_ratings_df as _make_bronze_df,
     ratings_dq_rules as get_dq_rules,
@@ -146,7 +147,6 @@ class TestLateArrivalFlagging:
 
     def test_late_arrival_does_not_quarantine(self, spark):
         """Late arrivals are valid — they must PASS DQ (not quarantined)."""
-        from tests.conftest import apply_dq_flags
 
         # 2019 event in 2022 batch — valid rating data
         df = _make_bronze_df(spark, [
@@ -301,7 +301,6 @@ class TestRatingsDQRules:
     """Validates all 7 DQ rules from DQ_AND_LINEAGE.md."""
 
     def test_valid_record_passes(self, spark):
-        from tests.conftest import apply_dq_flags
         df = _make_bronze_df(spark, [
             ("1", "1", "3.5", 1640995200, datetime(2024, 1, 1), 2022),
         ])
@@ -310,7 +309,6 @@ class TestRatingsDQRules:
         assert result["_dq_failed_rules"] == []
 
     def test_null_user_id_quarantines(self, spark):
-        from tests.conftest import apply_dq_flags
         df = _make_bronze_df(spark, [
             (None, "1", "3.5", 1640995200, datetime(2024, 1, 1), 2022),
         ])
@@ -319,7 +317,6 @@ class TestRatingsDQRules:
         assert "NULL_USER_ID" in result["_dq_failed_rules"]
 
     def test_null_movie_id_quarantines(self, spark):
-        from tests.conftest import apply_dq_flags
         df = _make_bronze_df(spark, [
             ("1", None, "3.5", 1640995200, datetime(2024, 1, 1), 2022),
         ])
@@ -328,7 +325,6 @@ class TestRatingsDQRules:
         assert "NULL_MOVIE_ID" in result["_dq_failed_rules"]
 
     def test_null_rating_quarantines(self, spark):
-        from tests.conftest import apply_dq_flags
         df = _make_bronze_df(spark, [
             ("1", "1", None, 1640995200, datetime(2024, 1, 1), 2022),
         ])
@@ -337,7 +333,6 @@ class TestRatingsDQRules:
         assert "NULL_RATING" in result["_dq_failed_rules"]
 
     def test_null_timestamp_quarantines(self, spark):
-        from tests.conftest import apply_dq_flags
         df = _make_bronze_df(spark, [
             ("1", "1", "3.5", None, datetime(2024, 1, 1), 2022),
         ])
@@ -347,7 +342,6 @@ class TestRatingsDQRules:
 
     def test_epoch_zero_quarantines_invalid_floor(self, spark):
         """timestamp=0 → 1970-01-01 → INVALID_TIMESTAMP_FLOOR fires."""
-        from tests.conftest import apply_dq_flags
         df = _make_bronze_df(spark, [
             ("1", "1", "3.5", 0, datetime(2024, 1, 1), 2022),
         ])
@@ -357,7 +351,6 @@ class TestRatingsDQRules:
 
     def test_rating_out_of_range_quarantines(self, spark):
         """Rating 5.5 > 5.0 → INVALID_RATING_RANGE fires."""
-        from tests.conftest import apply_dq_flags
         df = _make_bronze_df(spark, [
             ("1", "1", "5.5", 1640995200, datetime(2024, 1, 1), 2022),
         ])
@@ -367,7 +360,6 @@ class TestRatingsDQRules:
 
     def test_negative_rating_quarantines(self, spark):
         """Rating -1.0 < 0.0 → INVALID_RATING_RANGE fires."""
-        from tests.conftest import apply_dq_flags
         df = _make_bronze_df(spark, [
             ("1", "1", "-1.0", 1640995200, datetime(2024, 1, 1), 2022),
         ])
@@ -377,7 +369,6 @@ class TestRatingsDQRules:
 
     def test_boundary_rating_0_passes(self, spark):
         """Rating 0.0 is within valid range [0.0, 5.0]."""
-        from tests.conftest import apply_dq_flags
         df = _make_bronze_df(spark, [
             ("1", "1", "0.0", 1640995200, datetime(2024, 1, 1), 2022),
         ])
@@ -386,7 +377,6 @@ class TestRatingsDQRules:
 
     def test_boundary_rating_5_passes(self, spark):
         """Rating 5.0 is within valid range [0.0, 5.0]."""
-        from tests.conftest import apply_dq_flags
         df = _make_bronze_df(spark, [
             ("1", "1", "5.0", 1640995200, datetime(2024, 1, 1), 2022),
         ])
@@ -395,7 +385,6 @@ class TestRatingsDQRules:
 
     def test_multiple_rules_fire_together(self, spark):
         """NULL user_id + NULL rating + epoch-zero → 3+ DQ failures."""
-        from tests.conftest import apply_dq_flags
         df = _make_bronze_df(spark, [
             (None, "1", None, 0, datetime(2024, 1, 1), 2022),
         ])
@@ -408,7 +397,6 @@ class TestRatingsDQRules:
 
     def test_1995_boundary_passes(self, spark):
         """Timestamp exactly 1995-01-01 → should PASS (not before 1995)."""
-        from tests.conftest import apply_dq_flags
         # 788918400 = 1995-01-01 00:00:00 UTC
         df = _make_bronze_df(spark, [
             ("1", "1", "3.5", 788918400, datetime(2024, 1, 1), 1995),

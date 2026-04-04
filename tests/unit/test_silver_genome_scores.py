@@ -5,43 +5,14 @@ Tests: relevance rounding to 3dp, column casting, NULL handling, and all DQ rule
 """
 import pytest
 from datetime import datetime
-from pyspark.sql import functions as F
-from pyspark.sql.types import (
-    StructType, StructField, IntegerType, DoubleType, StringType, TimestampType,
+from pyspark.sql.types import DoubleType
+
+from tests.conftest import apply_dq_flags
+from tests.helpers.silver_mirrors import (
+    make_bronze_genome_scores_df as _make,
+    genome_scores_dq_rules as get_dq_rules,
+    transform_genome_scores,
 )
-
-
-def transform_genome_scores(df):
-    """Mirror of production transform_genome_scores() from genome_scores_data_cleaning.py."""
-    return (
-        df
-        .withColumn("movie_id",  F.col("movieId").cast(IntegerType()))
-        .withColumn("tag_id",    F.col("tagId").cast(IntegerType()))
-        .withColumn("relevance", F.col("relevance").cast(DoubleType()))
-        .withColumn("relevance", F.round(F.col("relevance"), 3))
-        .select("movie_id", "tag_id", "relevance", "_ingestion_timestamp")
-    )
-
-
-def get_dq_rules():
-    return [
-        ("NULL_MOVIE_ID",  F.col("movie_id").isNull()),
-        ("NULL_TAG_ID",    F.col("tag_id").isNull()),
-        ("NULL_RELEVANCE", F.col("relevance").isNull()),
-        ("INVALID_RELEVANCE_RANGE", ~F.col("relevance").between(0.0, 1.0)),
-    ]
-
-
-BRONZE_SCHEMA = StructType([
-    StructField("movieId",   StringType(), True),
-    StructField("tagId",     StringType(), True),
-    StructField("relevance", StringType(), True),
-    StructField("_ingestion_timestamp", TimestampType(), True),
-])
-
-
-def _make(spark, rows):
-    return spark.createDataFrame(rows, BRONZE_SCHEMA)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -49,6 +20,7 @@ def _make(spark, rows):
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.unit
 class TestRelevanceRounding:
+    """Tests verify that the relevance score is correctly rounded to 3 decimal places."""
 
     def test_rounds_to_3dp(self, spark):
         r = transform_genome_scores(_make(spark, [("1","1","0.12345",datetime(2024,1,1))])).collect()[0]
@@ -80,6 +52,7 @@ class TestRelevanceRounding:
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.unit
 class TestGenomeScoresCasting:
+    """Tests to verify data types are correctly cast for the target Silver schema."""
 
     def test_movie_id_int(self, spark):
         r = transform_genome_scores(_make(spark, [("42","1","0.5",datetime(2024,1,1))])).collect()[0]
@@ -108,6 +81,7 @@ class TestGenomeScoresCasting:
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.unit
 class TestGenomeScoresSchema:
+    """Tests verify that the output DataFrame strictly matches the expected Silver schema."""
 
     def test_output_columns(self, spark):
         result = transform_genome_scores(_make(spark, [("1","1","0.5",datetime(2024,1,1))]))
@@ -124,43 +98,36 @@ class TestGenomeScoresSchema:
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.contract
 class TestGenomeScoresDQRules:
+    """Tests validate the application of Data Quality (DQ) rules for genome scores."""
 
     def test_valid_passes(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_genome_scores(_make(spark, [("1","1","0.5",datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert r["_dq_status"] == "PASS"
 
     def test_null_movie_id(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_genome_scores(_make(spark, [(None,"1","0.5",datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert "NULL_MOVIE_ID" in r["_dq_failed_rules"]
 
     def test_null_tag_id(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_genome_scores(_make(spark, [("1",None,"0.5",datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert "NULL_TAG_ID" in r["_dq_failed_rules"]
 
     def test_null_relevance(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_genome_scores(_make(spark, [("1","1",None,datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert "NULL_RELEVANCE" in r["_dq_failed_rules"]
 
     def test_relevance_above_1_quarantines(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_genome_scores(_make(spark, [("1","1","1.5",datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert "INVALID_RELEVANCE_RANGE" in r["_dq_failed_rules"]
 
     def test_negative_relevance_quarantines(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_genome_scores(_make(spark, [("1","1","-0.1",datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert "INVALID_RELEVANCE_RANGE" in r["_dq_failed_rules"]
 
     def test_boundary_0_passes(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_genome_scores(_make(spark, [("1","1","0.0",datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert r["_dq_status"] == "PASS"
 
     def test_boundary_1_passes(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_genome_scores(_make(spark, [("1","1","1.0",datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert r["_dq_status"] == "PASS"

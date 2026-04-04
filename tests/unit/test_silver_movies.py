@@ -8,6 +8,7 @@ import pytest
 from datetime import datetime
 from pyspark.sql.types import ArrayType
 
+from tests.conftest import apply_dq_flags
 from tests.helpers.silver_mirrors import (
     make_bronze_movies_df as _make,
     movies_dq_rules as get_dq_rules,
@@ -20,6 +21,7 @@ from tests.helpers.silver_mirrors import (
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.unit
 class TestReleaseYearExtraction:
+    """Tests verify the robust extraction of the release year from the movie title using regex."""
 
     def test_standard_year(self, spark):
         r = transform_movies(_make(spark, [("1","Toy Story (1995)","Animation",datetime(2024,1,1))])).collect()[0]
@@ -59,6 +61,7 @@ class TestReleaseYearExtraction:
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.unit
 class TestArticleReordering:
+    """Tests verify that definite articles at the end of titles are properly reordered to the front."""
 
     def test_the(self, spark):
         r = transform_movies(_make(spark, [("1","Dark Knight, The (2008)","Action",datetime(2024,1,1))])).collect()[0]
@@ -94,6 +97,7 @@ class TestArticleReordering:
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.unit
 class TestGenreNormalization:
+    """Tests verify the parsing and splitting of pipe-delimited genre strings into formatted Arrays."""
 
     def test_pipe_to_array(self, spark):
         r = transform_movies(_make(spark, [("1","M (1995)","Animation|Comedy|Children",datetime(2024,1,1))])).collect()[0]
@@ -131,6 +135,7 @@ class TestGenreNormalization:
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.unit
 class TestTitleCleaning:
+    """Tests verify the removal of the release year from the title string."""
 
     def test_year_removed(self, spark):
         r = transform_movies(_make(spark, [("1","Toy Story (1995)","Animation",datetime(2024,1,1))])).collect()[0]
@@ -147,6 +152,7 @@ class TestTitleCleaning:
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.unit
 class TestMoviesOutputSchema:
+    """Tests verify that the output DataFrame strictly matches the expected Silver schema."""
 
     def test_output_columns(self, spark):
         result = transform_movies(_make(spark, [("1","M (1995)","Drama",datetime(2024,1,1))]))
@@ -163,28 +169,24 @@ class TestMoviesOutputSchema:
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.contract
 class TestMoviesDQRules:
+    """Tests validate the application of Data Quality (DQ) rules for movies."""
 
     def test_valid_passes(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_movies(_make(spark, [("1","Toy Story (1995)","Animation",datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert r["_dq_status"] == "PASS"
 
     def test_null_movie_id(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_movies(_make(spark, [(None,"M (1995)","Drama",datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert "NULL_MOVIE_ID" in r["_dq_failed_rules"]
 
     def test_null_title(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_movies(_make(spark, [("1",None,"Drama",datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert "NULL_TITLE" in r["_dq_failed_rules"]
 
     def test_empty_title(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_movies(_make(spark, [("1","   ","Drama",datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert "NULL_TITLE" in r["_dq_failed_rules"]
 
     def test_null_year_passes(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_movies(_make(spark, [("1","Toy Story","Drama",datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert r["_dq_status"] == "PASS"

@@ -6,44 +6,13 @@ Tests: tag formatting (whitespace collapse, Title Case), column casting,
 """
 import pytest
 from datetime import datetime
-from pyspark.sql import functions as F
-from pyspark.sql.types import (
-    StructType, StructField, IntegerType, StringType, TimestampType,
+
+from tests.conftest import apply_dq_flags
+from tests.helpers.silver_mirrors import (
+    make_bronze_genome_tags_df as _make,
+    genome_tags_dq_rules as get_dq_rules,
+    transform_genome_tags,
 )
-
-
-def transform_genome_tags(df):
-    """Mirror of production transform_genome_tags() from genome_tags_data_cleaning.py."""
-    return (
-        df
-        .withColumn("tag_id",  F.col("tagId").cast(IntegerType()))
-        .withColumn("tag_raw", F.col("tag").cast(StringType()))
-        .withColumn("tag",
-                    F.trim(F.regexp_replace(
-                        F.regexp_replace(F.col("tag_raw"), r"[\n\t\r]+", " "),
-                        r"\s+", " ")))
-        .withColumn("tag", F.initcap(F.col("tag")))
-        .select("tag_id", "tag", "_ingestion_timestamp")
-    )
-
-
-def get_dq_rules():
-    return [
-        ("NULL_TAG_ID", F.col("tag_id").isNull()),
-        ("NULL_TAG",    F.col("tag").isNull()),
-        ("EMPTY_TAG",   F.trim(F.col("tag")) == ""),
-    ]
-
-
-BRONZE_SCHEMA = StructType([
-    StructField("tagId", StringType(), True),
-    StructField("tag",   StringType(), True),
-    StructField("_ingestion_timestamp", TimestampType(), True),
-])
-
-
-def _make(spark, rows):
-    return spark.createDataFrame(rows, BRONZE_SCHEMA)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -51,6 +20,7 @@ def _make(spark, rows):
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.unit
 class TestGenomeTagFormatting:
+    """Tests verify whitespace collapsing, trimming, and title-casing of raw tags."""
 
     def test_title_case(self, spark):
         r = transform_genome_tags(_make(spark, [("1","action",datetime(2024,1,1))])).collect()[0]
@@ -96,6 +66,7 @@ class TestGenomeTagFormatting:
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.unit
 class TestGenomeTagsCasting:
+    """Tests to verify data types are correctly cast for the target Silver schema."""
 
     def test_tag_id_int(self, spark):
         r = transform_genome_tags(_make(spark, [("42","action",datetime(2024,1,1))])).collect()[0]
@@ -115,6 +86,7 @@ class TestGenomeTagsCasting:
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.unit
 class TestGenomeTagsSchema:
+    """Tests verify that the output DataFrame strictly matches the expected Silver schema."""
 
     def test_output_columns(self, spark):
         result = transform_genome_tags(_make(spark, [("1","action",datetime(2024,1,1))]))
@@ -131,29 +103,25 @@ class TestGenomeTagsSchema:
 # ═══════════════════════════════════════════════════════════════
 @pytest.mark.contract
 class TestGenomeTagsDQRules:
+    """Tests validate the application of Data Quality (DQ) rules for genome tags."""
 
     def test_valid_passes(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_genome_tags(_make(spark, [("1","action",datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert r["_dq_status"] == "PASS"
 
     def test_null_tag_id(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_genome_tags(_make(spark, [(None,"action",datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert "NULL_TAG_ID" in r["_dq_failed_rules"]
 
     def test_null_tag(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_genome_tags(_make(spark, [("1",None,datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert "NULL_TAG" in r["_dq_failed_rules"]
 
     def test_empty_tag(self, spark):
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_genome_tags(_make(spark, [("1","",datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert "EMPTY_TAG" in r["_dq_failed_rules"]
 
     def test_whitespace_only_tag(self, spark):
         """Tag of only whitespace → after trim becomes empty → EMPTY_TAG fires."""
-        from tests.conftest import apply_dq_flags
         r = apply_dq_flags(transform_genome_tags(_make(spark, [("1","   ",datetime(2024,1,1))])), get_dq_rules()).collect()[0]
         assert "EMPTY_TAG" in r["_dq_failed_rules"]
