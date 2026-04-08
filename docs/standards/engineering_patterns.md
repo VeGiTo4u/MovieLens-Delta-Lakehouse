@@ -148,7 +148,7 @@ writer.save(s3_target_path)
 
 **Problem:** `silver.ratings` is partitioned by `rating_year` (the event year from the timestamp). A batch file `ratings_2022.csv` may contain records timestamped 2019. Using `replaceWhere(rating_year=2019)` would wipe all existing 2019 data and replace it with ~150 late arrivals. Additionally, users may re-rate the same movie over time — Silver must preserve full history.
 
-**Decision:** Use Delta MERGE with SCD Type-2 semantics in Silver (`write_incremental_merge()`). Gold uses simple `replaceWhere`.
+**Decision:** Use Delta MERGE with SCD Type-2 semantics in Silver (`write_incremental_merge()`). Gold fact_ratings also uses MERGE upsert keyed by `(user_id, movie_sk, interaction_timestamp)` to stay replay-safe on late arrivals and reprocesses.
 
 **SCD2 MERGE strategy (staging view approach):**
 Delta MERGE cannot UPDATE + INSERT for the same matched row. The standard SCD2 pattern uses a staging view:
@@ -197,7 +197,7 @@ spark.sql(f"""
 
 **Rerun safety:** Same record matched again → no changes (idempotent).
 
-**Gold reads only current:** `fact_ratings_data_load.py` filters `.filter(is_current == True)` when reading Silver. No MERGE in Gold — simple `replaceWhere`.
+**Gold reads only current:** `ratings_data_load.py` filters `.filter(is_current == True)` when reading Silver. Gold then MERGEs into `fact_ratings` using the fact PK to avoid partition-overwrite data loss.
 
 **First-run handling:** `write_incremental_merge()` detects `tableExists() == False` and falls back to a full write with SCD2 columns computed via window functions to bootstrap the table.
 
@@ -402,11 +402,11 @@ def discover_s3_years(s3_source_path, table_name):
 
 **Problem:** Running OPTIMIZE, ANALYZE TABLE, Z-ORDER BY, and VACUUM inline after every write (a) slows down ETL pipelines, (b) wastes compute when small files accumulate between compactions, and (c) prevents scheduling maintenance during off-peak hours.
 
-**Solution:** All maintenance commands are handled by `maintenance/table_maintenance.py`, a dedicated Databricks notebook scheduled separately from ETL.
+**Solution:** All maintenance commands are handled by `scripts/maintenance/jobs/table_maintenance.py`, a dedicated Databricks notebook scheduled separately from ETL.
 
 **Architecture:**
-- `maintenance/maintenance_utils.py` contains a **table registry** (`MAINTENANCE_CONFIG`) defining per-table maintenance commands, Z-ORDER columns, and VACUUM retention periods.
-- `maintenance/table_maintenance.py` iterates across layers (Bronze, Silver, Gold) and runs the configured commands for each table.
+- `scripts/maintenance/utils.py` contains a **table registry** (`MAINTENANCE_CONFIG`) defining per-table maintenance commands, Z-ORDER columns, and VACUUM retention periods.
+- `scripts/maintenance/jobs/table_maintenance.py` iterates across layers (Bronze, Silver, Gold) and runs the configured commands for each table.
 
 **Per-layer maintenance rules:**
 

@@ -8,8 +8,9 @@ import json
 import os
 import streamlit as st
 import plotly.graph_objects as go
-from services.data_loader import load_yearly_summary, load_rating_distribution, load_all_time_summary
-from config.theme import (
+from dashboard.services.data_loader import load_yearly_summary, load_rating_distribution, load_all_time_summary
+from dashboard.services.health import evaluate_sync_manifest
+from dashboard.config.theme import (
     inject_theme, section_header, sidebar_badges, kpi_card, callout,
     PLOTLY_LAYOUT, CHART_GRADIENT, COLORS,
 )
@@ -196,16 +197,12 @@ if os.path.exists(manifest_path):
     try:
         with open(manifest_path) as f:
             manifest = json.load(f)
-        last_sync = manifest.get("last_sync", "unknown")
-        callout(
-            f"Pipeline last synced: <strong>{last_sync}</strong> — "
-            f"<span class='status-pill'>Live</span>",
-            kind="success",
-        )
+        kind, message = evaluate_sync_manifest(manifest)
+        callout(message, kind=kind)
     except Exception:
         callout("Pipeline sync status unavailable.", kind="warning")
 else:
     callout(
-        "No sync manifest found. Run <code>python sync_data.py</code> to populate.",
-        kind="info",
+        "No sync manifest found. Pipeline health is degraded until sync succeeds.",
+        kind="warning",
     )

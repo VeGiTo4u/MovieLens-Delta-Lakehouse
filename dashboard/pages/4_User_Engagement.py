@@ -8,8 +8,8 @@ engagement stats alongside visualizations.
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
-from services.data_loader import load_user_activity_distribution, load_rating_distribution
-from config.theme import inject_theme, section_header, kpi_card, callout, PLOTLY_LAYOUT, CHART_GRADIENT, CHART_COLORS, COLORS
+from dashboard.services.data_loader import load_user_activity_distribution, load_rating_distribution
+from dashboard.config.theme import inject_theme, section_header, kpi_card, callout, PLOTLY_LAYOUT, CHART_GRADIENT, CHART_COLORS, COLORS
 
 st.set_page_config(page_title="User Engagement | MovieLens", layout="wide")
 inject_theme()

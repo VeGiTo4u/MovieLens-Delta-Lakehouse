@@ -20,7 +20,9 @@
 # Widget
 # ------------------------------------------------------------
 dbutils.widgets.text("catalog_name", "movielens", "Catalog Name")
+dbutils.widgets.text("output_dir", "s3://movielens-data-store/analytics", "Output Directory")
 catalog_name = dbutils.widgets.get("catalog_name")
+output_dir_raw = dbutils.widgets.get("output_dir").strip()
 
 # COMMAND ----------
 
@@ -30,7 +32,9 @@ catalog_name = dbutils.widgets.get("catalog_name")
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
-OUTPUT_DIR = "s3://movielens-data-store/analytics"
+OUTPUT_DIR = output_dir_raw.rstrip("/")
+if not OUTPUT_DIR.startswith("s3://"):
+    raise ValueError(f"CONFIGURATION ERROR: output_dir must start with s3://, got: {OUTPUT_DIR}")
 
 print(f"[INFO] Catalog    : {catalog_name}")
 print(f"[INFO] Output dir : {OUTPUT_DIR}")

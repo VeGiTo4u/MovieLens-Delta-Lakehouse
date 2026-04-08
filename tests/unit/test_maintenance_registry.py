@@ -35,7 +35,7 @@ def test_layer_maintenance_dispatches_only_registered_tables(monkeypatch):
         dispatched_ops.append(("ANALYZE TABLE", full_table_name))
         return {"status": "SUCCESS", "operation": "ANALYZE TABLE"}
 
-    def _record_vacuum(full_table_name, retention_hours):
+    def _record_vacuum(full_table_name, retention_hours, break_glass=False, break_glass_reason=""):
         dispatched_ops.append(("VACUUM", full_table_name))
         return {"status": "SUCCESS", "operation": "VACUUM"}
 
@@ -55,3 +55,23 @@ def test_layer_maintenance_dispatches_only_registered_tables(monkeypatch):
         ("VACUUM", "movielens.silver.tags"),
     ]
     assert all(table in {"movielens.silver.ratings", "movielens.silver.tags"} for _, table in dispatched_ops)
+
+
+def test_vacuum_guardrail_rejects_unsafe_retention_without_break_glass():
+    with pytest.raises(ValueError, match="safety floor"):
+        maintenance_utils.run_vacuum(
+            full_table_name="movielens.silver.ratings",
+            retention_hours=24,
+            break_glass=False,
+            break_glass_reason="",
+        )
+
+
+def test_vacuum_guardrail_requires_reason_when_break_glass():
+    with pytest.raises(ValueError, match="break_glass_reason is required"):
+        maintenance_utils.run_vacuum(
+            full_table_name="movielens.silver.ratings",
+            retention_hours=24,
+            break_glass=True,
+            break_glass_reason="   ",
+        )

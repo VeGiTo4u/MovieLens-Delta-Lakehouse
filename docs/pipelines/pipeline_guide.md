@@ -87,25 +87,25 @@ silver/tags_data_cleaning.py
 
 These must complete before any facts or bridge:
 ```
-gold/dimensional_tables/dim_movies_data_load.py        ← must run first (others depend on movie_sk)
-gold/dimensional_tables/dim_genres_data_load.py        ← must run before bridge
-gold/dimensional_tables/dim_genome_tags_data_load.py
-gold/dimensional_tables/dim_external_links_data_load.py
-gold/dimensional_tables/dim_date_data_load.py          ← requires silver.ratings to exist
+gold/dimensional_tables/movies_data_load.py            ← must run first (others depend on movie_sk)
+gold/dimensional_tables/genres_data_load.py            ← must run before bridge
+gold/dimensional_tables/genome_tags_data_load.py
+gold/dimensional_tables/external_links_data_load.py
+gold/dimensional_tables/date_data_load.py              ← requires silver.ratings to exist
 ```
 
 ### Phase 4: Gold — Facts and Bridge (after dimensions)
 
 ```
-gold/bridge_tables/bridge_movies_genres_data_load.py   ← requires dim_movies + dim_genres
-gold/fact_tables/fact_ratings_data_load.py             ← requires dim_movies + dim_date
-gold/fact_tables/fact_genome_scores_data_load.py       ← requires dim_movies + dim_genome_tags
+gold/bridge_tables/movies_genres_data_load.py          ← requires dim_movies + dim_genres
+gold/fact_tables/ratings_data_load.py                  ← requires dim_movies + dim_date
+gold/fact_tables/genome_scores_data_load.py            ← requires dim_movies + dim_genome_tags
 ```
 
 ### Phase 5: Maintenance (scheduled separately — off-peak hours)
 
 ```
-maintenance/table_maintenance.py                       ← runs OPTIMIZE, ANALYZE, ZORDER, VACUUM
+maintenance/jobs/table_maintenance.py                  ← runs OPTIMIZE, ANALYZE, ZORDER, VACUUM
 ```
 
 > **Note:** This notebook is NOT part of the ETL pipeline. Schedule it as a separate Databricks Job to run during off-peak hours (e.g., nightly or weekly). It processes all Bronze, Silver, and Gold tables.
@@ -171,7 +171,7 @@ Every notebook is parameterized via **Databricks Widgets**. All parameters must 
 | `target_schema_name` | `gold` | |
 | `model_version` | `1.0` | Version tag stored in `_model_version` metadata column |
 
-### Gold — `dim_date_data_load.py` (no source table widget)
+### Gold — `date_data_load.py` (no source table widget)
 
 | Widget | Default | Description |
 |--------|---------|-------------|
@@ -197,7 +197,7 @@ Silver: reads all Bronze partitions → processes all years → writes all parti
 
 Gold dims: full Silver read → full overwrite of Gold table.
 
-Gold fact_ratings: reads Silver `is_current=True` + `_dq_status=PASS` rows → writes per `rating_year` partition via `replaceWhere`.
+Gold fact_ratings: reads Silver `is_current=True` + `_dq_status=PASS` rows → writes via MERGE upsert keyed on `(user_id, movie_sk, interaction_timestamp)`.
 
 ### Incremental Runs (New Year Added to S3)
 
@@ -207,7 +207,7 @@ When a new year file (e.g., `ratings_2024.csv`) is uploaded to S3:
 
 2. **Silver:** `get_available_years_from_source()` shows Bronze has 2024. `get_already_processed_years()` shows Silver doesn't. Processes only 2024.
 
-3. **Gold fact_ratings:** `get_available_years_from_source()` shows Silver has 2024. `get_processed_batch_years(target)` shows Gold doesn't. Reads Silver 2024 `is_current=True` PASS rows. Writes to fact_ratings via `replaceWhere` per `rating_year` partition.
+3. **Gold fact_ratings:** `get_available_years_from_source()` shows Silver has 2024. Audit gating checks unseen batches / source version / model version / forced replay. Reads Silver 2024 `is_current=True` PASS rows and MERGEs into fact_ratings.
 
 4. **Gold dims:** Full overwrite (dimensions are small; no incremental needed).
 
@@ -223,7 +223,7 @@ All incremental notebooks call `dbutils.notebook.exit("NO_NEW_DATA")` when there
 
 **Silver ratings:** MERGE with SCD2 semantics. Same records matched → no changes (idempotent). Re-ratings handled via SCD2 versioning (expire old, insert new).
 
-**Gold fact_ratings:** `replaceWhere` per `rating_year` partition. Reads Silver `is_current=True` rows only. Same partition rewritten atomically → idempotent.
+**Gold fact_ratings:** MERGE upsert on `(user_id, movie_sk, interaction_timestamp)`. Reads Silver `is_current=True` rows only. Re-runs are idempotent and replay-safe.
 
 **Gold dims:** Full overwrite. Idempotent by definition.
 

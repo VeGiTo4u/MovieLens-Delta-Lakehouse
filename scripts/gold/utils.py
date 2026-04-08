@@ -17,7 +17,7 @@
 #   append_gold_metadata()         — 6 ETL metadata columns
 #   write_gold()                   — full overwrite + mergeSchema (optional partitionBy)
 #   write_gold_merge()             — MERGE upsert for late-arrival-safe incremental writes
-#   (OPTIMIZE/ANALYZE/VACUUM are now in maintenance/maintenance_utils.py)
+#   (OPTIMIZE/ANALYZE/VACUUM are now in scripts/maintenance/utils.py)
 #   register_table()               — CREATE TABLE IF NOT EXISTS
 #   post_write_validation_gold()   — Gold contracts (PK, non-null, FK, metadata)
 #   print_summary()                — standardized run summary
@@ -800,7 +800,7 @@ def _read_write_metrics(s3_target_path: str) -> int:
 # COMMAND ----------
 # NOTE: optimize_table() has been removed.
 # OPTIMIZE, ANALYZE TABLE, and VACUUM are now handled by the
-# dedicated maintenance notebook: maintenance/table_maintenance.py
+# dedicated maintenance notebook: scripts/maintenance/jobs/table_maintenance.py
 # This decouples maintenance from ETL and allows scheduling
 # during off-peak hours.
 
@@ -1019,6 +1019,119 @@ def post_write_validation_gold(
 # COMMAND ----------
 
 # ------------------------------------------------------------
+# ensure_gold_batch_audit_table
+# ------------------------------------------------------------
+def ensure_gold_batch_audit_table(
+    catalog_name: str,
+    schema_name: str = "gold",
+    table_name: str = "gold_pipeline_audit",
+) -> str:
+    """
+    Ensures a Gold batch-audit table exists for replay-safe incrementality.
+
+    Returns:
+        Fully qualified audit table name.
+    """
+    audit_full_name = f"{catalog_name}.{schema_name}.{table_name}"
+    spark.sql(f"""
+        CREATE TABLE IF NOT EXISTS {audit_full_name} (
+            target_table STRING,
+            source_table STRING,
+            batch_year INT,
+            source_silver_version INT,
+            model_version STRING,
+            status STRING,
+            processed_at TIMESTAMP,
+            job_run_id STRING,
+            notebook_path STRING
+        )
+        USING DELTA
+    """)
+    print(f"[INFO] Audit table ready: {audit_full_name}")
+    return audit_full_name
+
+# COMMAND ----------
+
+# ------------------------------------------------------------
+# get_successfully_processed_batches
+# ------------------------------------------------------------
+def get_successfully_processed_batches(
+    audit_full_name: str,
+    target_full_name: str,
+    source_full_name: str,
+    source_silver_version: Optional[int],
+    model_version: str,
+) -> set:
+    """
+    Returns successful batch years already processed for the same
+    target/source/version/model combination.
+    """
+    df_audit = spark.table(audit_full_name).filter(
+        (F.col("target_table") == target_full_name) &
+        (F.col("source_table") == source_full_name) &
+        (F.col("status") == "SUCCESS") &
+        (F.col("model_version") == model_version)
+    )
+
+    if source_silver_version is None:
+        df_audit = df_audit.filter(F.col("source_silver_version").isNull())
+    else:
+        df_audit = df_audit.filter(F.col("source_silver_version") == source_silver_version)
+
+    processed = {
+        row.batch_year
+        for row in df_audit.select("batch_year").distinct().collect()
+    }
+    return processed
+
+# COMMAND ----------
+
+# ------------------------------------------------------------
+# log_gold_batch_audit
+# ------------------------------------------------------------
+def log_gold_batch_audit(
+    audit_full_name: str,
+    target_full_name: str,
+    source_full_name: str,
+    batch_years: List[int],
+    source_silver_version: Optional[int],
+    model_version: str,
+    status: str,
+    etl_meta: Dict[str, str],
+) -> None:
+    """
+    Appends batch-level processing audit records.
+    """
+    from datetime import datetime
+
+    if not batch_years:
+        return
+
+    rows = [
+        (
+            target_full_name,
+            source_full_name,
+            int(year),
+            source_silver_version,
+            model_version,
+            status,
+            datetime.utcnow(),
+            etl_meta["job_run_id"],
+            etl_meta["notebook_path"],
+        )
+        for year in sorted(set(batch_years))
+    ]
+    schema = (
+        "target_table STRING, source_table STRING, batch_year INT, "
+        "source_silver_version INT, model_version STRING, status STRING, "
+        "processed_at TIMESTAMP, job_run_id STRING, notebook_path STRING"
+    )
+    spark.createDataFrame(rows, schema=schema).write.format("delta").mode("append").saveAsTable(audit_full_name)
+    print(f"[INFO] Logged {len(rows)} batch audit rows to {audit_full_name}")
+
+# COMMAND ----------
+
+# ------------------------------------------------------------
 # print_summary
 # ------------------------------------------------------------
 def print_summary(
@@ -1072,6 +1185,9 @@ for fn in [
     "write_gold()",
     "write_gold_ratings_replacewhere_partitions()",
     "write_gold_merge()",
+    "ensure_gold_batch_audit_table()",
+    "get_successfully_processed_batches()",
+    "log_gold_batch_audit()",
     "register_table()",
     "post_write_validation_gold()",
     "print_summary()",

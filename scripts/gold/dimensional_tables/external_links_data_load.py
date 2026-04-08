@@ -125,7 +125,7 @@ print(f"[INFO] Gold records : {final_count:,}")
 # Append ETL Metadata + Write + Register + Validate
 #
 # Note: OPTIMIZE, ANALYZE TABLE, and VACUUM are handled by the
-# dedicated maintenance notebook (maintenance/table_maintenance.py)
+# dedicated maintenance notebook (scripts/maintenance/jobs/table_maintenance.py)
 # scheduled during off-peak hours — decoupled from ETL.
 # ------------------------------------------------------------
 df_gold = append_gold_metadata(

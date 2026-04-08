@@ -26,6 +26,10 @@ from typing import Dict, List, Any, Optional
 
 # COMMAND ----------
 
+MIN_VACUUM_RETENTION_HOURS = 168
+
+# COMMAND ----------
+
 # ------------------------------------------------------------
 # resolve_etl_metadata
 # ------------------------------------------------------------
@@ -201,7 +205,12 @@ def run_analyze(full_table_name: str) -> Dict[str, Any]:
 # ------------------------------------------------------------
 # run_vacuum
 # ------------------------------------------------------------
-def run_vacuum(full_table_name: str, retention_hours: int) -> Dict[str, Any]:
+def run_vacuum(
+    full_table_name: str,
+    retention_hours: int,
+    break_glass: bool = False,
+    break_glass_reason: str = "",
+) -> Dict[str, Any]:
     """
     Runs VACUUM on a Delta table with the specified retention period.
 
@@ -224,9 +233,24 @@ def run_vacuum(full_table_name: str, retention_hours: int) -> Dict[str, Any]:
     Returns:
         dict with status ('SUCCESS' or 'FAILED') and message
     """
+    if retention_hours < MIN_VACUUM_RETENTION_HOURS:
+        if not break_glass:
+            raise ValueError(
+                f"CONFIGURATION ERROR: retention_hours={retention_hours} is below "
+                f"the safety floor of {MIN_VACUUM_RETENTION_HOURS}. "
+                f"Set break_glass=true and provide a non-empty break_glass_reason."
+            )
+        if not str(break_glass_reason).strip():
+            raise ValueError(
+                "CONFIGURATION ERROR: break_glass_reason is required when break_glass=true "
+                f"and retention_hours < {MIN_VACUUM_RETENTION_HOURS}."
+            )
+
     try:
         spark.sql(f"VACUUM {full_table_name} RETAIN {retention_hours} HOURS")
         msg = f"VACUUM RETAIN {retention_hours} HOURS"
+        if break_glass and retention_hours < MIN_VACUUM_RETENTION_HOURS:
+            msg = f"{msg} (BREAK_GLASS: {break_glass_reason.strip()})"
         print(f"[SUCCESS] {msg} completed: {full_table_name}")
         return {"status": "SUCCESS", "operation": msg}
 
@@ -245,6 +269,8 @@ def run_table_maintenance(
     table_name: str,
     config: Dict[str, Any],
     vacuum_retention_override: int = None,
+    break_glass: bool = False,
+    break_glass_reason: str = "",
 ) -> Dict[str, Any]:
     """
     Runs all configured maintenance commands for a single table.
@@ -287,7 +313,14 @@ def run_table_maintenance(
     # 3. VACUUM
     if config.get("vacuum", False):
         retention = vacuum_retention_override or config.get("vacuum_hours", 168)
-        results.append(run_vacuum(full_table_name, retention))
+        results.append(
+            run_vacuum(
+                full_table_name=full_table_name,
+                retention_hours=retention,
+                break_glass=break_glass,
+                break_glass_reason=break_glass_reason,
+            )
+        )
 
     elapsed = (datetime.now() - start_time).total_seconds()
     print(f"[DONE] {full_table_name} — {elapsed:.1f}s")
@@ -308,6 +341,8 @@ def run_layer_maintenance(
     catalog: str,
     layer: str,
     vacuum_retention_override: int = None,
+    break_glass: bool = False,
+    break_glass_reason: str = "",
 ) -> List[Dict[str, Any]]:
     """
     Runs maintenance on all tables in a layer (bronze/silver/gold).
@@ -337,7 +372,13 @@ def run_layer_maintenance(
     for table_name, config in layer_config.items():
         try:
             result = run_table_maintenance(
-                catalog, layer, table_name, config, vacuum_retention_override
+                catalog=catalog,
+                schema=layer,
+                table_name=table_name,
+                config=config,
+                vacuum_retention_override=vacuum_retention_override,
+                break_glass=break_glass,
+                break_glass_reason=break_glass_reason,
             )
             layer_results.append(result)
         except Exception as e:

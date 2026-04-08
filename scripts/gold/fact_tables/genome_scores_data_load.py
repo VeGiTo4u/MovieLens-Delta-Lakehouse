@@ -139,7 +139,7 @@ df_gold = append_gold_metadata(
 final_count = write_gold(df_gold, s3_target_path, target_table_name)
 
 # Note: OPTIMIZE, ANALYZE TABLE, and VACUUM are handled by the
-# dedicated maintenance notebook (maintenance/table_maintenance.py)
+# dedicated maintenance notebook (scripts/maintenance/jobs/table_maintenance.py)
 # scheduled during off-peak hours — decoupled from ETL.
 register_table(target_full, s3_target_path)
 

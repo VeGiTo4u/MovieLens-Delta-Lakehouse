@@ -34,10 +34,14 @@
 dbutils.widgets.text("catalog_name",             "movielens", "Catalog Name")
 dbutils.widgets.text("layers",                   "bronze,silver,gold", "Layers (comma-separated)")
 dbutils.widgets.text("vacuum_retention_override", "",         "VACUUM Retention Override (hours, blank=use config)")
+dbutils.widgets.dropdown("break_glass", "false", ["false", "true"], "Break Glass (allow retention < 168h)")
+dbutils.widgets.text("break_glass_reason", "", "Break Glass Reason (required when break_glass=true)")
 
 catalog_name             = dbutils.widgets.get("catalog_name")
 layers_raw               = dbutils.widgets.get("layers")
 vacuum_retention_raw     = dbutils.widgets.get("vacuum_retention_override").strip()
+break_glass              = dbutils.widgets.get("break_glass").strip().lower() == "true"
+break_glass_reason       = dbutils.widgets.get("break_glass_reason").strip()
 
 # Parse layers
 layers = [l.strip().lower() for l in layers_raw.split(",") if l.strip()]
@@ -66,9 +70,17 @@ if vacuum_retention_override is not None and vacuum_retention_override <= 0:
         f"CONFIGURATION ERROR: vacuum_retention_override must be positive, got {vacuum_retention_override}"
     )
 
+if break_glass and not break_glass_reason:
+    raise ValueError(
+        "CONFIGURATION ERROR: break_glass_reason must be provided when break_glass=true."
+    )
+
 print(f"[CONFIG] Catalog                  : {catalog_name}")
 print(f"[CONFIG] Layers                   : {layers}")
 print(f"[CONFIG] VACUUM retention override : {vacuum_retention_override or '(per-table config)'}")
+print(f"[CONFIG] Break glass              : {break_glass}")
+if break_glass:
+    print(f"[CONFIG] Break glass reason       : {break_glass_reason}")
 
 # COMMAND ----------
 
@@ -94,6 +106,8 @@ for layer in layers:
         catalog=catalog_name,
         layer=layer,
         vacuum_retention_override=vacuum_retention_override,
+        break_glass=break_glass,
+        break_glass_reason=break_glass_reason,
     )
     all_results[layer] = layer_results
 

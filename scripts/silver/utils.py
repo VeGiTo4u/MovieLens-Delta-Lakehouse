@@ -813,111 +813,134 @@ def write_incremental_merge(
         }
 
     # ----------------------------------------------------------------
-    # Incremental run — SCD2 MERGE
+    # Incremental run — key-scoped SCD2 recomputation
     #
-    # Step 1: Register incoming data as temp view
-    # Step 2: Build staging view with 'update' + 'insert' rows
-    # Step 3: Run MERGE with SCD2 conditions
+    # Why this strategy:
+    #   The older staging MERGE pattern could insert retroactive rows as
+    #   is_current=True. Here we recompute the full timeline for each
+    #   affected natural key from target+incoming together, then replace
+    #   only those keys atomically.
     # ----------------------------------------------------------------
-    source_view = f"_merge_source_{full_table_name.replace('.', '_')}"
-    df_deduped.createOrReplaceTempView(source_view)
+    target_df = spark.table(full_table_name)
+    affected_keys_df = df_deduped.select(*scd2_natural_key).distinct()
+    affected_keys_count = affected_keys_df.count()
 
-    # Build ON clause for SCD2 natural key (used in staging view INNER JOIN)
-    nk_on_clause = " AND ".join(
-        f"target.{col} = source.{col}" for col in scd2_natural_key
-    )
+    target_affected = target_df.join(affected_keys_df, on=scd2_natural_key, how="inner")
+    target_affected_count = target_affected.count()
 
-    # Build ON clause for exact match (merge key = full event key)
-    mk_on_clause = " AND ".join(
-        f"target.{col} = staging.{col}" for col in merge_key_cols
-    )
-
-    # Source columns for the staging view — exclude SCD2 management columns
-    # (they'll be set by the MERGE logic)
-    source_cols = [c for c in df_deduped.columns
-                   if c not in ("is_current", "effective_end_date")]
-    
-    target_select = ", ".join(f"target.{c} AS {c}" for c in source_cols)
-    source_select = ", ".join(f"source.{c} AS {c}" for c in source_cols)
-
-    print(f"[INFO]  Building SCD2 staging view")
-
-    # STAGING VIEW:
-    # Part 1 (update rows): For each incoming row that matches an existing
-    #   CURRENT row on natural key with a NEWER timestamp → create an
-    #   'update' row that carries the target's merge_key values so the
-    #   MERGE can find and expire the old row.
-    # Part 2 (insert rows): All incoming rows → tag as 'insert'
-    staging_view = f"_scd2_staging_{full_table_name.replace('.', '_')}"
-
-    spark.sql(f"""
-        CREATE OR REPLACE TEMP VIEW {staging_view} AS
-
-        -- Part 1: Rows to EXPIRE existing current versions
-        SELECT
-            {target_select},
-            CAST(NULL AS BOOLEAN) AS is_current,
-            CAST(NULL AS TIMESTAMP) AS effective_end_date,
-            'update' AS _merge_action,
-            source.interaction_timestamp AS _new_effective_end_date
-        FROM {full_table_name} AS target
-        INNER JOIN {source_view} AS source
-            ON  {nk_on_clause}
-        WHERE target.is_current = TRUE
-          AND source.interaction_timestamp > target.interaction_timestamp
-
-        UNION ALL
-
-        -- Part 2: All incoming rows to INSERT as new versions
-        SELECT
-            {source_select},
-            TRUE AS is_current,
-            CAST(NULL AS TIMESTAMP) AS effective_end_date,
-            'insert' AS _merge_action,
-            CAST(NULL AS TIMESTAMP) AS _new_effective_end_date
-        FROM {source_view} AS source
-    """)
-
-    print(f"[INFO]  Running SCD2 MERGE INTO {full_table_name}")
-
-    # The MERGE:
-    #   MATCHED + _merge_action='update' → expire old row
-    #   NOT MATCHED + _merge_action='insert' → insert new row as current
-    spark.sql(f"""
-        MERGE INTO {full_table_name} AS target
-        USING {staging_view} AS staging
-        ON  {mk_on_clause}
-        WHEN MATCHED AND staging._merge_action = 'update' THEN
-            UPDATE SET
-                target.is_current = FALSE,
-                target.effective_end_date = staging._new_effective_end_date
-        WHEN NOT MATCHED AND staging._merge_action = 'insert' THEN
-            INSERT ({', '.join(df_deduped.columns)})
-            VALUES ({', '.join(f'staging.{c}' for c in df_deduped.columns)})
-    """)
-
-    # MERGE metrics from Delta commit log
-    try:
-        merge_metrics = (
-            spark.sql(f"DESCRIBE HISTORY {full_table_name} LIMIT 1")
-                 .select("operationMetrics")
-                 .collect()[0]["operationMetrics"]
+    combined = (
+        target_affected
+        .withColumn("_is_incoming", F.lit(0))
+        .unionByName(
+            df_deduped.withColumn("_is_incoming", F.lit(1)),
+            allowMissingColumns=False
         )
-        rows_inserted = int(merge_metrics.get("numTargetRowsInserted", 0))
-        rows_updated  = int(merge_metrics.get("numTargetRowsUpdated",  0))
-    except Exception:
-        rows_inserted = -1
-        rows_updated  = -1
-
-    rows_affected = (
-        rows_inserted + rows_updated
-        if rows_inserted >= 0
-        else deduped_count
     )
 
-    print(f"[SUCCESS] SCD2 MERGE completed")
-    print(f"          Rows inserted (new versions) : {rows_inserted:,}")
-    print(f"          Rows updated  (expirations)  : {rows_updated:,}")
+    # De-dupe exact event keys; incoming rows win over existing target rows.
+    event_dedup_window = (
+        Window
+        .partitionBy(merge_key_cols)
+        .orderBy(F.col("_is_incoming").desc(), F.col(dedup_order_col).desc())
+    )
+    combined_event_deduped = (
+        combined
+        .withColumn("_event_rank", F.row_number().over(event_dedup_window))
+        .filter(F.col("_event_rank") == 1)
+        .drop("_event_rank")
+    )
+
+    # Recompute timeline per natural key by event-time ordering.
+    scd2_desc_window = (
+        Window
+        .partitionBy(scd2_natural_key)
+        .orderBy(F.col("interaction_timestamp").desc(), F.col(dedup_order_col).desc())
+    )
+    scd2_asc_window = (
+        Window
+        .partitionBy(scd2_natural_key)
+        .orderBy(F.col("interaction_timestamp").asc(), F.col(dedup_order_col).asc())
+    )
+
+    recomputed_affected = (
+        combined_event_deduped
+        .withColumn("_scd2_rank", F.row_number().over(scd2_desc_window))
+        .withColumn(
+            "is_current",
+            F.when(F.col("_scd2_rank") == 1, F.lit(True)).otherwise(F.lit(False))
+        )
+        .withColumn(
+            "effective_end_date",
+            F.when(F.col("_scd2_rank") == 1, F.lit(None).cast("timestamp"))
+             .otherwise(F.lead("interaction_timestamp").over(scd2_asc_window))
+        )
+        .drop("_scd2_rank", "_is_incoming")
+    )
+
+    # Detach from source-table lineage before mutating target table.
+    # localCheckpoint(eager=True) prevents post-delete recomputation.
+    recomputed_affected = recomputed_affected.localCheckpoint(eager=True)
+    recomputed_count = recomputed_affected.count()
+    rows_inserted = max(recomputed_count - target_affected_count, 0)
+    rows_updated = min(target_affected_count, recomputed_count)
+
+    nk_delete_clause = " AND ".join(
+        f"target.{col} = keys.{col}" for col in scd2_natural_key
+    )
+
+    print(f"[INFO]  Rewriting SCD2 timelines for {affected_keys_count:,} natural keys")
+    from delta.tables import DeltaTable
+    (
+        DeltaTable.forName(spark, full_table_name)
+        .alias("target")
+        .merge(affected_keys_df.alias("keys"), nk_delete_clause)
+        .whenMatchedDelete()
+        .execute()
+    )
+
+    (
+        recomputed_affected.write
+            .format("delta")
+            .mode("append")
+            .save(s3_target_path)
+    )
+
+    # Invariant checks for affected natural keys only.
+    verify_df = spark.table(full_table_name).join(affected_keys_df, on=scd2_natural_key, how="inner")
+
+    duplicate_currents = (
+        verify_df.groupBy(*scd2_natural_key)
+        .agg(F.sum(F.when(F.col("is_current") == True, 1).otherwise(0)).alias("current_count"))
+        .filter(F.col("current_count") > 1)
+        .count()
+    )
+    missing_current = (
+        verify_df.groupBy(*scd2_natural_key)
+        .agg(F.sum(F.when(F.col("is_current") == True, 1).otherwise(0)).alias("current_count"))
+        .filter(F.col("current_count") == 0)
+        .count()
+    )
+    current_with_end_date = verify_df.filter(
+        (F.col("is_current") == True) & F.col("effective_end_date").isNotNull()
+    ).count()
+    historical_without_end_date = verify_df.filter(
+        (F.col("is_current") == False) & F.col("effective_end_date").isNull()
+    ).count()
+
+    if duplicate_currents > 0 or missing_current > 0 or current_with_end_date > 0 or historical_without_end_date > 0:
+        raise RuntimeError(
+            "FAILED: SCD2 invariant violation after incremental write. "
+            f"duplicate_currents={duplicate_currents}, "
+            f"missing_current={missing_current}, "
+            f"current_with_end_date={current_with_end_date}, "
+            f"historical_without_end_date={historical_without_end_date}"
+        )
+
+    rows_affected = rows_inserted + rows_updated
+
+    print(f"[SUCCESS] SCD2 incremental rewrite completed")
+    print(f"          Rows inserted (estimated)    : {rows_inserted:,}")
+    print(f"          Rows updated  (estimated)    : {rows_updated:,}")
     print(f"          Rows affected                : {rows_affected:,}")
 
     return {

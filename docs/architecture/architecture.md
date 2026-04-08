@@ -74,11 +74,11 @@ For `tags`, Silver continues to use `_batch_year` partitioning with `SHOW PARTIT
 - Appends Gold ETL metadata: `_source_table`, `_job_run_id`, `_notebook_path`, `_model_version`, `_aggregation_timestamp`, `_source_silver_version`
 - Runs `post_write_validation_gold()` — PK uniqueness check + NULL metadata check
 
-**Maintenance (OPTIMIZE, ANALYZE, VACUUM, Z-ORDER)** is decoupled from ETL. These commands run in the dedicated `maintenance/table_maintenance.py` notebook, scheduled during off-peak hours. See `maintenance/maintenance_utils.py` for the per-table configuration registry.
+**Maintenance (OPTIMIZE, ANALYZE, VACUUM, Z-ORDER)** is decoupled from ETL. These commands run in the dedicated `scripts/maintenance/jobs/table_maintenance.py` notebook, scheduled during off-peak hours. See `scripts/maintenance/utils.py` for the per-table configuration registry.
 
 **Write strategies:**
 - **Dimensions & bridge:** Full overwrite + `mergeSchema`
-- **`fact_ratings`:** `replaceWhere` per `rating_year` partition (Silver handles late arrival routing + SCD2; Gold reads only `is_current=True` rows)
+- **`fact_ratings`:** MERGE upsert on `(user_id, movie_sk, interaction_timestamp)` with `rating_year` partitioning (Silver handles late arrival routing + SCD2; Gold reads only `is_current=True` rows)
 - **`fact_genome_scores`:** Full overwrite (no late arrival scenario)
 
 **`dim_date` is special:** Generated programmatically from `silver.ratings` date range using pandas. Has no Silver source table. `_source_table = "GENERATED"`, `_source_silver_version = NULL`.
@@ -99,7 +99,7 @@ Source Files (S3 raw/)
 │
 ├─ ratings_YYYY.csv  ──→ bronze.ratings       ──→ silver.ratings       ──→ gold.fact_ratings
 │   (per year)            (partitioned by          (partitioned by          (partitioned by
-│                          _batch_year)              rating_year — MERGE      rating_year — replaceWhere
+│                          _batch_year)              rating_year — MERGE      rating_year — MERGE
 │                                                    + SCD2 versioning)       reads is_current=True only)
 └─ tags_YYYY.csv     ──→ bronze.tags          ──→ silver.tags
     (per year)

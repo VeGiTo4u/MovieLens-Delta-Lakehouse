@@ -213,7 +213,7 @@ print("[SUCCESS] Quality validation passed")
 # _source_silver_version = None    — no silver source
 #
 # Note: OPTIMIZE, ANALYZE TABLE, and VACUUM are handled by the
-# dedicated maintenance notebook (maintenance/table_maintenance.py)
+# dedicated maintenance notebook (scripts/maintenance/jobs/table_maintenance.py)
 # scheduled during off-peak hours — decoupled from ETL.
 # ------------------------------------------------------------
 df_gold = append_gold_metadata(

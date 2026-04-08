@@ -8,8 +8,8 @@ and yearly summary table with interactive date filtering.
 import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from services.data_loader import load_rating_trends_monthly, load_yearly_summary
-from config.theme import inject_theme, section_header, callout, PLOTLY_LAYOUT, CHART_GRADIENT, COLORS
+from dashboard.services.data_loader import load_rating_trends_monthly, load_yearly_summary
+from dashboard.config.theme import inject_theme, section_header, callout, PLOTLY_LAYOUT, CHART_GRADIENT, COLORS
 
 st.set_page_config(page_title="Rating Trends | MovieLens", layout="wide")
 inject_theme()

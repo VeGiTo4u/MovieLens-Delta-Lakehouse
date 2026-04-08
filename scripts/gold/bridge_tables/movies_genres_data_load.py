@@ -134,7 +134,7 @@ print(f"[INFO] Bridge records : {final_count:,}")
 # stored in the bridge — BI tools join to dims for those.
 #
 # Note: OPTIMIZE, ANALYZE TABLE, and VACUUM are handled by the
-# dedicated maintenance notebook (maintenance/table_maintenance.py)
+# dedicated maintenance notebook (scripts/maintenance/jobs/table_maintenance.py)
 # scheduled during off-peak hours — decoupled from ETL.
 # ------------------------------------------------------------
 df_gold = append_gold_metadata(

@@ -40,20 +40,20 @@ MovieLens-Delta-Lakehouse/
 └── gold/
     ├── gold_utils.py                     # Shared utility library for all Gold notebooks
     ├── dimensional_tables/
-    │   ├── dim_movies_data_load.py
-    │   ├── dim_genres_data_load.py
-    │   ├── dim_genome_tags_data_load.py
-    │   ├── dim_external_links_data_load.py
-    │   └── dim_date_data_load.py         # Generated from silver.ratings date range
+    │   ├── movies_data_load.py
+    │   ├── genres_data_load.py
+    │   ├── genome_tags_data_load.py
+    │   ├── external_links_data_load.py
+    │   └── date_data_load.py             # Generated from silver.ratings date range
     ├── fact_tables/
-    │   ├── fact_ratings_data_load.py     # replaceWhere — reads is_current=True from Silver
-    │   └── fact_genome_scores_data_load.py
+    │   ├── ratings_data_load.py          # MERGE upsert — reads is_current=True from Silver
+    │   └── genome_scores_data_load.py
     └── bridge_tables/
-        └── bridge_movies_genres_data_load.py  # Resolves many-to-many movies↔genres
+        └── movies_genres_data_load.py         # Resolves many-to-many movies↔genres
 
 maintenance/
-├── maintenance_utils.py                  # Table registry + OPTIMIZE/ANALYZE/VACUUM/ZORDER utilities
-└── table_maintenance.py                  # Scheduled notebook — runs maintenance for all layers
+├── utils.py                              # Table registry + OPTIMIZE/ANALYZE/VACUUM/ZORDER utilities
+└── jobs/table_maintenance.py             # Scheduled notebook — runs maintenance for all layers
 ```
 
 ---
@@ -95,7 +95,7 @@ A rating event timestamped 2019 may arrive in `ratings_2022.csv`. Bronze detects
 `_read_write_metrics()` reads `numOutputRows` from `DeltaTable.history(1).operationMetrics` — a single JSON file in `_delta_log`. Pre-write `df.count()` calls have been systematically removed everywhere.
 
 ### 8. Maintenance is decoupled from ETL
-OPTIMIZE, ANALYZE TABLE, Z-ORDER BY, and VACUUM are **not** run inline in data load notebooks. They are handled by a dedicated `maintenance/table_maintenance.py` notebook, scheduled as a separate Databricks Job during off-peak hours. A centralized table registry in `maintenance/maintenance_utils.py` defines which commands apply to each table. Bronze gets OPTIMIZE + VACUUM (1-year retention). Silver and Gold get all four commands (7-day retention).
+OPTIMIZE, ANALYZE TABLE, Z-ORDER BY, and VACUUM are **not** run inline in data load notebooks. They are handled by a dedicated `scripts/maintenance/jobs/table_maintenance.py` notebook, scheduled as a separate Databricks Job during off-peak hours. A centralized table registry in `scripts/maintenance/utils.py` defines which commands apply to each table. Bronze gets OPTIMIZE + VACUUM (1-year retention). Silver and Gold get all four commands (7-day retention).
 
 ---
 
@@ -154,9 +154,9 @@ Full execution details: [`docs/PIPELINE_GUIDE.md`](docs/PIPELINE_GUIDE.md).
 | `monotonically_increasing_id()` for surrogate keys | SHA2-256 of natural key — deterministic & idempotent |
 | Dropping bad rows in Silver | Flag with `_dq_status=QUARANTINE`, retain for audit |
 | External state for incrementality | Delta table itself is the source of truth |
-| `replaceWhere` for late arrivals in fact tables | Silver MERGE routes late arrivals to correct `rating_year` partition; Gold uses `replaceWhere` |
+| `replaceWhere` for late arrivals in fact tables | Silver MERGE routes late arrivals to correct `rating_year` partition; Gold uses MERGE upsert to preserve existing valid rows |
 | `dropDuplicates()` before MERGE | `row_number()` with explicit ORDER BY — deterministic |
 | No version history in Silver | SCD Type-2 on ratings — full history preserved, Gold reads only `is_current=True` |
 | Blanket `except Exception` in metadata queries | Targeted `AnalysisException` catch — other errors propagate |
 | `partitionBy()` on every incremental write | `partitionBy` only on first write — subsequent writes inherit layout |
-| OPTIMIZE/ANALYZE inline after every write | Decoupled to `maintenance/table_maintenance.py` — runs on schedule during off-peak hours |
+| OPTIMIZE/ANALYZE inline after every write | Decoupled to `scripts/maintenance/jobs/table_maintenance.py` — runs on schedule during off-peak hours |

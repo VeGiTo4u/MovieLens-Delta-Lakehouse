@@ -7,8 +7,8 @@ trends over time (stacked area + heatmap).
 
 import streamlit as st
 import plotly.express as px
-from services.data_loader import load_genre_performance, load_genre_trends_yearly
-from config.theme import inject_theme, section_header, callout, PLOTLY_LAYOUT, CHART_GRADIENT, COLORS
+from dashboard.services.data_loader import load_genre_performance, load_genre_trends_yearly
+from dashboard.config.theme import inject_theme, section_header, callout, PLOTLY_LAYOUT, CHART_GRADIENT, COLORS
 
 st.set_page_config(page_title="Genres | MovieLens", layout="wide")
 inject_theme()

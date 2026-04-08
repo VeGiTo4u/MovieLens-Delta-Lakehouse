@@ -158,13 +158,13 @@ dim_external_links — standalone lookup (no fact FK)
 
 **Partition column:** `rating_year` (event year from timestamp, NOT `_batch_year`)
 
-**Write strategy:** `replaceWhere` per `rating_year` partition. Silver handles late arrival routing and SCD2 versioning; Gold reads only `is_current=True` rows from Silver. No MERGE needed in Gold.
+**Write strategy:** MERGE upsert on `(user_id, movie_sk, interaction_timestamp)`, partitioned by `rating_year`. Silver handles late arrival routing and SCD2 versioning; Gold reads only `is_current=True` rows from Silver.
 
 **Source filtering:** Gold reads Silver with `.filter(is_current == True)` — only the latest rating per `(user_id, movie_id)` pair is materialized in Gold. Full rating history (all versions) is preserved in Silver for ML models.
 
 **Pre-write deduplication:** `row_number() OVER (PARTITION BY merge_key ORDER BY _processing_timestamp DESC)` — deterministic (latest Silver processing time wins).
 
-**Optimization:** `OPTIMIZE ... ZORDER BY (movie_sk, user_id)` after every write.
+**Optimization:** `OPTIMIZE ... ZORDER BY (movie_sk, user_id)` is handled by the decoupled maintenance job.
 
 ---
 

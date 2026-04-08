@@ -14,6 +14,7 @@ dbutils.widgets.text("source_schema_name",  "silver",    "Source Schema")
 dbutils.widgets.text("target_catalog_name", "movielens", "Target Catalog")
 dbutils.widgets.text("target_schema_name",  "gold",      "Target Schema")
 dbutils.widgets.text("model_version",       "1.0",       "Model Version")
+dbutils.widgets.text("force_reprocess_batches", "",      "Force Reprocess Batches: '' | 'YYYY,YYYY' | 'ALL'")
 
 source_table_name   = dbutils.widgets.get("source_table_name")
 target_table_name   = dbutils.widgets.get("target_table_name")
@@ -23,6 +24,7 @@ source_schema_name  = dbutils.widgets.get("source_schema_name")
 target_catalog_name = dbutils.widgets.get("target_catalog_name")
 target_schema_name  = dbutils.widgets.get("target_schema_name")
 model_version       = dbutils.widgets.get("model_version")
+force_reprocess_batches = dbutils.widgets.get("force_reprocess_batches").strip()
 
 # COMMAND ----------
 
@@ -43,38 +45,65 @@ dim_date_full   = f"{target_catalog_name}.{target_schema_name}.dim_date"
 # COMMAND ----------
 
 # ------------------------------------------------------------
-# Incrementality — which _batch_years has Gold already processed?
+# Incrementality — replay-safe batch gating with audit table
 #
-# Architecture note (post-refactor):
-#   Silver now partitions by rating_year (event year), not
-#   _batch_year. However, incrementality tracking in Gold still
-#   uses _batch_year to answer: "which source batches have been
-#   fully processed into Gold?"
+# Batch replay semantics:
+#   A batch is considered "already processed" only for the same
+#   source_silver_version + model_version combination. This allows
+#   safe recomputation after Silver fixes or Gold model changes.
 #
-#   _batch_year is a non-partition column in both Silver and Gold,
-#   but it is still the correct unit of work for incrementality.
-#
-# Silver MERGE already handled late arrivals:
-#   A 2019 event in the 2022 batch is already sitting in
-#   Silver's rating_year=2019 partition. Gold simply reads
-#   Silver data filtered to new _batch_years, does FK joins,
-#   and writes via replaceWhere per rating_year — no MERGE needed.
+# force_reprocess_batches:
+#   ""            -> normal incrementality
+#   "YYYY,YYYY"   -> process only listed years (if available)
+#   "ALL"         -> process all available years
 # ------------------------------------------------------------
 from pyspark.sql import functions as F
 from pyspark.sql.types import IntegerType
 
 print("[START] Incrementality check")
 
-silver_batch_years    = sorted(get_available_years_from_source(source_full))
-processed_batch_years = sorted(get_processed_batch_years(target_full))
+silver_version = get_silver_version(source_full)
+silver_batch_years = sorted(get_available_years_from_source(source_full))
+audit_full = ensure_gold_batch_audit_table(target_catalog_name, target_schema_name)
+processed_batch_years = sorted(
+    get_successfully_processed_batches(
+        audit_full_name=audit_full,
+        target_full_name=target_full,
+        source_full_name=source_full,
+        source_silver_version=silver_version,
+        model_version=model_version,
+    )
+)
 
-batches_to_process = sorted(set(silver_batch_years) - set(processed_batch_years))
+if force_reprocess_batches.upper() == "ALL":
+    batches_to_process = silver_batch_years
+    replay_mode = "ALL"
+elif force_reprocess_batches:
+    requested = sorted({
+        int(part.strip())
+        for part in force_reprocess_batches.split(",")
+        if part.strip()
+    })
+    missing = sorted(set(requested) - set(silver_batch_years))
+    if missing:
+        raise ValueError(
+            f"CONFIGURATION ERROR: force_reprocess_batches contains unavailable years: {missing}. "
+            f"Available: {silver_batch_years}"
+        )
+    batches_to_process = requested
+    replay_mode = "SELECTIVE"
+else:
+    batches_to_process = sorted(set(silver_batch_years) - set(processed_batch_years))
+    replay_mode = "INCREMENTAL"
+
 batches_to_skip    = sorted(set(silver_batch_years) & set(processed_batch_years))
 
 print(f"[INFO] Silver batch years available : {silver_batch_years}")
 print(f"[INFO] Already in Gold              : {processed_batch_years}")
 print(f"[INFO] Batches to process           : {batches_to_process}")
 print(f"[INFO] Batches to skip              : {batches_to_skip}")
+print(f"[INFO] Replay mode                  : {replay_mode}")
+print(f"[INFO] Silver version               : {silver_version}")
 
 if not batches_to_process:
     print("[INFO] All batches already in Gold — nothing to do. Exiting.")
@@ -90,7 +119,6 @@ if not batches_to_process:
 # is_current = True. ML models that need full history read
 # Silver directly (all versions available there).
 # ------------------------------------------------------------
-silver_version = get_silver_version(source_full)
 df_pass, initial_count, quarantine_count = read_silver_pass_only(source_full)
 
 df_new_batches = (
@@ -146,9 +174,8 @@ except Exception as e:
 #   derive it here. Late arrivals are already in the correct
 #   Silver partition. Gold simply reads, joins dims, and writes.
 #
-#   No MERGE needed in Gold anymore. replaceWhere on rating_year
-#   is safe because Silver already ensures data integrity per
-#   event-year partition.
+#   Gold uses MERGE upsert semantics to avoid year-partition
+#   replacement risks when late-arrival batches touch old years.
 # ------------------------------------------------------------
 print("[START] Transforming")
 
@@ -204,14 +231,16 @@ df_gold = append_gold_metadata(
 # COMMAND ----------
 
 # ------------------------------------------------------------
-# Write per rating_year via shared helper (replaceWhere)
+# Write via MERGE upsert
 # ------------------------------------------------------------
-total_written = write_gold_ratings_replacewhere_partitions(
+merge_result = write_gold_merge(
     df=df_gold,
     full_table_name=target_full,
     s3_target_path=s3_target_path,
-    partition_col="rating_year",
+    merge_key_cols=["user_id", "movie_sk", "interaction_timestamp"],
+    partition_by=["rating_year"],
 )
+total_written = merge_result["rows_affected"]
 
 # COMMAND ----------
 
@@ -219,7 +248,7 @@ total_written = write_gold_ratings_replacewhere_partitions(
 # Register Table
 #
 # Note: OPTIMIZE, ANALYZE TABLE, and VACUUM are handled by the
-# dedicated maintenance notebook (maintenance/table_maintenance.py)
+# dedicated maintenance notebook (scripts/maintenance/jobs/table_maintenance.py)
 # scheduled during off-peak hours — decoupled from ETL.
 # ------------------------------------------------------------
 register_table(target_full, s3_target_path)
@@ -254,6 +283,17 @@ post_write_validation_gold(
     ],
 )
 
+log_gold_batch_audit(
+    audit_full_name=audit_full,
+    target_full_name=target_full,
+    source_full_name=source_full,
+    batch_years=batches_to_process,
+    source_silver_version=silver_version,
+    model_version=model_version,
+    status="SUCCESS",
+    etl_meta=etl_meta,
+)
+
 # COMMAND ----------
 
 print_summary(
@@ -270,6 +310,8 @@ print_summary(
         "Late arrivals in batch" : f"{late_arrival_count:,}",
         "Orphans removed"        : f"{orphans_removed:,}",
         "Rows written"           : f"{total_written:,}",
+        "Rows inserted"          : f"{merge_result['rows_inserted']:,}",
+        "Rows updated"           : f"{merge_result['rows_updated']:,}",
         "Total rows in Gold"     : f"{total_gold_count:,}",
         "Unique movies"          : f"{coverage['unique_movies']:,}",
         "Unique users"           : f"{coverage['unique_users']:,}",
@@ -277,8 +319,9 @@ print_summary(
         "Avg rating"             : f"{coverage['avg_rating']:.4f}",
         "Partition column"       : "rating_year — from Silver (event year, already routed)",
         "Late arrival handling"  : "Handled by Silver MERGE — Gold reads clean partitions",
-        "Idempotency"            : "replaceWhere per rating_year — reruns are safe",
-        "Write strategy"         : "replaceWhere per rating_year (MERGE removed — lives in Silver now)",
+        "Replay mode"            : replay_mode,
+        "Idempotency"            : "MERGE on (user_id, movie_sk, interaction_timestamp)",
+        "Write strategy"         : "MERGE upsert (no partition replacement)",
         "Optimization"           : "Z-ORDER BY (movie_sk, user_id)",
     }
 )

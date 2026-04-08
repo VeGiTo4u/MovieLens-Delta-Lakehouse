@@ -56,7 +56,7 @@ S3 (raw CSV)  →  Bronze (raw Delta)  →  Silver (clean + DQ-flagged)  →  Go
                     ┌──────────────────────▼───────────────────────────┐
                     │  GOLD — Star Schema                              │
                     │  SHA2-256 surrogate keys · FK validation via     │
-                    │  INNER JOIN · replaceWhere per partition         │
+                    │  INNER JOIN · MERGE upsert for fact_ratings      │
                     └──────────────────────────────────────────────────┘
 ```
 
@@ -84,7 +84,7 @@ dim_external_links (standalone lookup)
 | `dim_external_links` | Dimension | `link_sk` (SHA2-256) | Full overwrite |
 | `dim_date` | Dimension | `date_key` (YYYYMMDD) | Generated from Silver |
 | `bridge_movies_genres` | Bridge | `(movie_sk, genre_sk)` | Full overwrite |
-| `fact_ratings` | Fact | `(user_id, movie_sk, timestamp)` | `replaceWhere` per partition |
+| `fact_ratings` | Fact | `(user_id, movie_sk, timestamp)` | MERGE upsert on `(user_id, movie_sk, interaction_timestamp)` |
 | `fact_genome_scores` | Fact | `(movie_sk, tag_sk)` | Full overwrite |
 
 </details>
@@ -102,7 +102,7 @@ These aren't just implementation choices — each one solves a specific problem.
 | **SHA2-256 surrogate keys** | Deterministic (same input → same key across reruns), partition-safe, SCD2-ready. `monotonically_increasing_id()` drifts across runs and has no ordering guarantee. |
 | **Silver flags, never drops** | Every row gets `_dq_status` + `_dq_failed_rules`. Quarantined rows stay for audit. Gold reads only `PASS` rows — no Silver reprocess if DQ rules change. |
 | **SCD Type-2 on ratings** | When a user re-rates a movie, the old row is expired and the new row becomes current. Gold reads `is_current=True` for BI; ML reads Silver directly for full history. |
-| **MERGE for late arrivals** | A 2019 rating in `ratings_2022.csv` lands in `rating_year=2019` via Silver MERGE. `replaceWhere` would wipe all existing 2019 data. |
+| **MERGE for late arrivals** | A 2019 rating in `ratings_2022.csv` lands in `rating_year=2019` via Silver MERGE. Gold also uses MERGE to avoid historical partition rewrites dropping valid rows. |
 | **`mergeSchema`, never `overwriteSchema`** | New columns are safely adopted. Removed or type-changed columns fail the write — breaking changes caught early, not silently applied. |
 | **Maintenance decoupled from ETL** | OPTIMIZE, VACUUM, Z-ORDER run in a separate scheduled notebook during off-peak hours — not inline after every write. |
 
@@ -130,7 +130,7 @@ MovieLens-Delta-Lakehouse/
 │   ├── maintenance/                # OPTIMIZE, VACUUM, Z-ORDER (separate from ETL)
 │   └── analytics/                  # KPI export to Parquet for Streamlit
 │
-├── streamlit_app/                  # Multi-page dashboard (DuckDB + Plotly)
+├── dashboard/                      # Multi-page dashboard (DuckDB + Plotly)
 │   ├── app.py                      #   Entry point
 │   ├── pages/                      #   5 pages: Trends, Movies, Genres, Users, Content DNA
 │   ├── data/                       #   Local Parquet cache (synced from S3)
@@ -163,17 +163,16 @@ MovieLens-Delta-Lakehouse/
 
 3. **Execute in order** — Bronze → Silver → Gold dimensions → Gold facts/bridge. Each notebook is parameterized via Databricks Widgets.
 
-4. **Schedule maintenance** — Run `maintenance/table_maintenance.py` as a separate job during off-peak hours.
+4. **Schedule maintenance** — Run `scripts/maintenance/jobs/table_maintenance.py` as a separate job during off-peak hours.
 
 Full execution details, widget parameters, and troubleshooting: [`PIPELINE_GUIDE.md`](README's/PIPELINE_GUIDE.md).
 
-### Streamlit Dashboard
+### Dashboard
 
 ```bash
-cd streamlit_app
-pip install -r requirements.txt
-python sync_data.py          # Sync latest Parquet from S3
-streamlit run app.py
+pip install -r dashboard/requirements.txt
+python dashboard/services/sync_data.py          # Sync latest Parquet from S3
+streamlit run dashboard/app.py
 ```
 
 ---
