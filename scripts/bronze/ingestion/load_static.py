@@ -1,5 +1,5 @@
 # Databricks notebook source
-# MAGIC %run ./bronze_utils
+# MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/bronze/utils
 
 # COMMAND ----------
 
