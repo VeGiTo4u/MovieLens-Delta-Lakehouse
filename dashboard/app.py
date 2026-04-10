@@ -8,9 +8,9 @@ import json
 import os
 import streamlit as st
 import plotly.graph_objects as go
-from dashboard.services.data_loader import load_yearly_summary, load_rating_distribution, load_all_time_summary
-from dashboard.services.health import evaluate_sync_manifest
-from dashboard.config.theme import (
+from services.data_loader import load_yearly_summary, load_rating_distribution, load_all_time_summary
+from services.health import evaluate_sync_manifest
+from config.theme import (
     inject_theme, section_header, sidebar_badges, kpi_card, callout,
     PLOTLY_LAYOUT, CHART_GRADIENT, COLORS,
 )

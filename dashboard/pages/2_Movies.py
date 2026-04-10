@@ -8,8 +8,8 @@ in a tabbed layout for clean drilldown.
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
-from dashboard.services.data_loader import load_top_rated_movies, load_most_popular_movies
-from dashboard.config.theme import inject_theme, section_header, callout, PLOTLY_LAYOUT, CHART_GRADIENT, COLORS
+from services.data_loader import load_top_rated_movies, load_most_popular_movies
+from config.theme import inject_theme, section_header, callout, PLOTLY_LAYOUT, CHART_GRADIENT, COLORS
 
 st.set_page_config(page_title="Movies | MovieLens", layout="wide")
 inject_theme()
