@@ -78,7 +78,7 @@ For `tags`, Silver continues to use `_batch_year` partitioning with `SHOW PARTIT
 
 **Write strategies:**
 - **Dimensions & bridge:** Full overwrite + `mergeSchema`
-- **`fact_ratings`:** MERGE upsert on `(user_id, movie_sk, interaction_timestamp)` with `rating_year` partitioning (Silver handles late arrival routing + SCD2; Gold reads only `is_current=True` rows)
+- **`fact_ratings`:** CDF identifies impacted Silver `_batch_year` values since the last successful Gold audit entry, then Gold reads the current Silver snapshot for those batches and MERGEs on `(user_id, movie_sk, interaction_timestamp)` with `rating_year` partitioning. Silver handles late-arrival routing + SCD2; Gold reads only `is_current=True` rows.
 - **`fact_genome_scores`:** Full overwrite (no late arrival scenario)
 
 **`dim_date` is special:** Generated programmatically from `silver.ratings` date range using pandas. Has no Silver source table. `_source_table = "GENERATED"`, `_source_silver_version = NULL`.
@@ -184,7 +184,7 @@ movielens (catalog)
 **Key Unity Catalog behaviors this project accounts for:**
 - Storage and metadata are **decoupled**: Delta files exist on S3 independently of the catalog entry. Dropping the catalog table entry does NOT delete data.
 - `CREATE TABLE IF NOT EXISTS ... USING DELTA LOCATION '...'` is always a no-op on subsequent runs.
-- `SHOW PARTITIONS` on serverless compute may lag after the first write (Unity Catalog metadata sync). Both `silver_utils` and `gold_utils` have a fallback to `distinct().collect()` that fires exactly once when this edge case is hit. All three layers (`bronze_utils`, `silver_utils`, `gold_utils`) use targeted `AnalysisException` handling in `get_partition_years()` — only `TABLE_OR_VIEW_NOT_FOUND` returns an empty set; all other errors propagate immediately to prevent silent full-reprocessing. Partition values use positional `row[0]` access with multi-format parsing (`_batch_year=2022`, `rating_year=2022`, and plain `2022`) for cross-DBR compatibility. Bronze and Silver call `register_table()` early (inside the write loop, after the first successful year write) to ensure `SHOW PARTITIONS` works on pipeline retry. Gold `fact_ratings` uses `get_processed_batch_years()` to read `_batch_year` as a non-partition column for incrementality, since Gold is partitioned by `rating_year`.
+- `SHOW PARTITIONS` on serverless compute may lag after the first write (Unity Catalog metadata sync). Both `silver_utils` and `gold_utils` have a fallback to `distinct().collect()` that fires exactly once when this edge case is hit. All three layers (`bronze_utils`, `silver_utils`, `gold_utils`) use targeted `AnalysisException` handling in `get_partition_years()` — only `TABLE_OR_VIEW_NOT_FOUND` returns an empty set; all other errors propagate immediately to prevent silent full-reprocessing. Partition values use positional `row[0]` access with multi-format parsing (`_batch_year=2022`, `rating_year=2022`, and plain `2022`) for cross-DBR compatibility. Bronze and Silver call `register_table()` early (inside the write loop, after the first successful year write) to ensure `SHOW PARTITIONS` works on pipeline retry. Gold `fact_ratings` uses Silver Change Data Feed to discover impacted `_batch_year` values between audited Silver versions, since Gold is partitioned by `rating_year`.
 
 ---
 

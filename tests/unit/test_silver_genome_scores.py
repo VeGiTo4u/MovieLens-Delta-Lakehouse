@@ -8,11 +8,8 @@ from datetime import datetime
 from pyspark.sql.types import DoubleType
 
 from tests.conftest import apply_dq_flags
-from tests.helpers.silver_mirrors import (
-    make_bronze_genome_scores_df as _make,
-    genome_scores_dq_rules as get_dq_rules,
-    transform_genome_scores,
-)
+from scripts.silver.transforms.genome_scores import get_dq_rules, transform_genome_scores
+from tests.helpers.silver_mirrors import make_bronze_genome_scores_df as _make
 
 
 # ═══════════════════════════════════════════════════════════════

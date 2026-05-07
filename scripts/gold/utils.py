@@ -1038,8 +1038,11 @@ def ensure_gold_batch_audit_table(
             target_table STRING,
             source_table STRING,
             batch_year INT,
+            start_silver_version INT,
+            end_silver_version INT,
             source_silver_version INT,
             model_version STRING,
+            processing_strategy STRING,
             status STRING,
             processed_at TIMESTAMP,
             job_run_id STRING,
@@ -1047,6 +1050,15 @@ def ensure_gold_batch_audit_table(
         )
         USING DELTA
     """)
+    for column_name, column_type in [
+        ("start_silver_version", "INT"),
+        ("end_silver_version", "INT"),
+        ("processing_strategy", "STRING"),
+    ]:
+        try:
+            spark.sql(f"ALTER TABLE {audit_full_name} ADD COLUMNS ({column_name} {column_type})")
+        except Exception:
+            pass
     print(f"[INFO] Audit table ready: {audit_full_name}")
     return audit_full_name
 
@@ -1087,6 +1099,79 @@ def get_successfully_processed_batches(
 # COMMAND ----------
 
 # ------------------------------------------------------------
+# get_latest_successful_silver_version
+# ------------------------------------------------------------
+def get_latest_successful_silver_version(
+    audit_full_name: str,
+    target_full_name: str,
+    source_full_name: str,
+    model_version: str,
+) -> Optional[int]:
+    """
+    Returns the latest audited Silver end version for successful Gold runs.
+
+    A None result means this target/model has no CDF baseline yet and
+    should process all available source batches.
+    """
+    row = (
+        spark.table(audit_full_name)
+             .filter(
+                 (F.col("target_table") == target_full_name) &
+                 (F.col("source_table") == source_full_name) &
+                 (F.col("status") == "SUCCESS") &
+                 (F.col("model_version") == model_version)
+             )
+             .agg(F.max("end_silver_version").alias("version"))
+             .collect()[0]
+    )
+    return row["version"]
+
+# COMMAND ----------
+
+# ------------------------------------------------------------
+# get_cdf_impacted_batch_years
+# ------------------------------------------------------------
+def get_cdf_impacted_batch_years(
+    source_full_name: str,
+    start_version: int,
+    end_version: int,
+) -> set:
+    """
+    Uses Delta Change Data Feed only to discover changed _batch_year values.
+
+    The Gold load still reads the current Silver table for those batches;
+    CDF is used as a low-cost change detector, not as the source of truth
+    for final Gold rows.
+    """
+    if start_version > end_version:
+        return set()
+
+    try:
+        rows = (
+            spark.sql(
+                f"""
+                SELECT DISTINCT _batch_year
+                FROM table_changes('{source_full_name}', {start_version}, {end_version})
+                WHERE _batch_year IS NOT NULL
+                  AND _change_type IN ('insert', 'update_postimage', 'delete')
+                """
+            )
+            .collect()
+        )
+    except Exception as e:
+        raise RuntimeError(
+            "FAILED: Could not read Silver Change Data Feed for Gold incrementality. "
+            "CDF must be enabled on silver.ratings before the audited start version. "
+            "Run fact_ratings with force_reprocess_batches=ALL to rebuild the Gold "
+            f"audit baseline. Source={source_full_name}, start_version={start_version}, "
+            f"end_version={end_version}. Error: {e}"
+        )
+
+    return {row._batch_year for row in rows}
+
+# COMMAND ----------
+
+# ------------------------------------------------------------
 # log_gold_batch_audit
 # ------------------------------------------------------------
 def log_gold_batch_audit(
@@ -1094,8 +1179,11 @@ def log_gold_batch_audit(
     target_full_name: str,
     source_full_name: str,
     batch_years: List[int],
+    start_silver_version: Optional[int],
+    end_silver_version: Optional[int],
     source_silver_version: Optional[int],
     model_version: str,
+    processing_strategy: str,
     status: str,
     etl_meta: Dict[str, str],
 ) -> None:
@@ -1112,8 +1200,11 @@ def log_gold_batch_audit(
             target_full_name,
             source_full_name,
             int(year),
+            start_silver_version,
+            end_silver_version,
             source_silver_version,
             model_version,
+            processing_strategy,
             status,
             datetime.utcnow(),
             etl_meta["job_run_id"],
@@ -1123,7 +1214,8 @@ def log_gold_batch_audit(
     ]
     schema = (
         "target_table STRING, source_table STRING, batch_year INT, "
-        "source_silver_version INT, model_version STRING, status STRING, "
+        "start_silver_version INT, end_silver_version INT, "
+        "source_silver_version INT, model_version STRING, processing_strategy STRING, status STRING, "
         "processed_at TIMESTAMP, job_run_id STRING, notebook_path STRING"
     )
     spark.createDataFrame(rows, schema=schema).write.format("delta").mode("append").saveAsTable(audit_full_name)
@@ -1187,6 +1279,8 @@ for fn in [
     "write_gold_merge()",
     "ensure_gold_batch_audit_table()",
     "get_successfully_processed_batches()",
+    "get_latest_successful_silver_version()",
+    "get_cdf_impacted_batch_years()",
     "log_gold_batch_audit()",
     "register_table()",
     "post_write_validation_gold()",

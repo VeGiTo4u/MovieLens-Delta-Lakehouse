@@ -20,7 +20,7 @@ s3://<your-bucket>/gold/
 ```
 
 ### Step 2: AWS IAM Role
-Create an IAM role with S3 read/write permissions for the bucket. Follow the detailed walkthrough in `environment_setup/external_location_setup_guide.md`.
+Create an IAM role with S3 read/write permissions for the bucket. Follow the detailed walkthrough in `scripts/environment_setup/docs/external_location_setup_guide.md`.
 
 ### Step 3: Databricks External Locations
 Create four External Locations in Databricks (Catalog → External Data → External Locations):
@@ -32,7 +32,7 @@ Create four External Locations in Databricks (Catalog → External Data → Exte
 Apply the Databricks-generated trust policy to the IAM role's Trust Relationship in AWS.
 
 ### Step 4: Unity Catalog Bootstrap
-Run `environment_setup/environmentSetup.sql` in Databricks SQL:
+Run `scripts/environment_setup/sql/environmentSetup.sql` in Databricks SQL:
 ```sql
 CREATE CATALOG IF NOT EXISTS movieLens;
 USE CATALOG movieLens;
@@ -238,7 +238,7 @@ All incremental notebooks call `dbutils.notebook.exit("NO_NEW_DATA")` when there
 → Bronze hasn't run yet, or ran with a different catalog/schema. Check execution order.
 
 **`FAILED: Cannot list S3 source path '...'`**
-→ External Location not configured, or S3 path doesn't exist. Check `external_location_setup_guide.md`.
+→ External Location not configured, or S3 path doesn't exist. Check `scripts/environment_setup/docs/external_location_setup_guide.md`.
 
 **`FAILED: Zero PASS rows in silver...`**
 → All Silver rows are QUARANTINE. Check `silver.<table>` for `_dq_failed_rules` breakdown. Fix upstream data or DQ rules before running Gold.

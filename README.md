@@ -93,7 +93,7 @@ dim_external_links (standalone lookup)
 
 ## Key Engineering Decisions
 
-These aren't just implementation choices — each one solves a specific problem. Full rationale in [`ENGINEERING_PATTERNS.md`](README's/ENGINEERING_PATTERNS.md).
+These aren't just implementation choices — each one solves a specific problem. Full rationale in [`engineering_patterns.md`](docs/standards/engineering_patterns.md).
 
 | Decision | Why It Matters |
 |----------|---------------|
@@ -115,15 +115,15 @@ MovieLens-Delta-Lakehouse/
 │
 ├── scripts/
 │   ├── environment_setup/          # Unity Catalog bootstrap + AWS IAM setup guide
-│   ├── bronze/                     # Raw ingestion (3 files)
-│   │   ├── bronze_utils.py         #   Shared utilities for all Bronze notebooks
-│   │   ├── static_data_load.py     #   movies, links, genome_scores, genome_tags
-│   │   └── historical_and_incremental_data_load.py   # ratings, tags (year-partitioned)
+│   ├── bronze/                     # Raw ingestion
+│   │   ├── utils.py                #   Shared utilities for all Bronze notebooks
+│   │   └── ingestion/              #   Static and historical/incremental loaders
 │   ├── silver/                     # Cleaning & DQ (7 files)
-│   │   ├── silver_utils.py         #   Shared utilities (MERGE, SCD2, DQ framework)
-│   │   └── *_data_cleaning.py      #   Per-table cleaning notebooks
+│   │   ├── utils.py                #   Shared utilities (MERGE, SCD2, DQ framework)
+│   │   ├── transforms/             #   Importable pure transform + DQ functions
+│   │   └── */transform.py          #   Per-table Databricks wrappers
 │   ├── gold/                       # Star schema (9 files)
-│   │   ├── gold_utils.py           #   Shared utilities (SK generation, FK joins)
+│   │   ├── utils.py                #   Shared utilities (SK generation, FK joins, CDF audit)
 │   │   ├── dimensional_tables/     #   5 dimension loaders
 │   │   ├── fact_tables/            #   2 fact loaders
 │   │   └── bridge_tables/          #   1 bridge loader
@@ -136,12 +136,10 @@ MovieLens-Delta-Lakehouse/
 │   ├── data/                       #   Local Parquet cache (synced from S3)
 │   └── sync_data.py                #   S3 → local sync utility
 │
-├── README's/                       # Deep-dive documentation
-│   ├── ARCHITECTURE.md             #   Layer contracts, data flow, S3 layout
-│   ├── DATA_MODEL.md               #   Full star schema specification
-│   ├── ENGINEERING_PATTERNS.md     #   16 design patterns with rationale
-│   ├── PIPELINE_GUIDE.md           #   Execution order, parameters, troubleshooting
-│   └── DQ_AND_LINEAGE.md           #   DQ rules, ETL metadata, lineage tracing
+├── docs/                           # Deep-dive documentation
+│   ├── architecture/               #   Architecture, data model, DQ and lineage
+│   ├── pipelines/                  #   Execution order, parameters, troubleshooting
+│   └── standards/                  #   Engineering patterns and rationale
 │
 └── CLAUDE.md                       # AI context file (full project summary)
 ```
@@ -157,7 +155,7 @@ MovieLens-Delta-Lakehouse/
 
 ### Quick Start
 
-1. **Set up infrastructure** — Run [`environmentSetup.sql`](scripts/environment_setup/environmentSetup.sql) to create the `movielens` catalog and schemas. Follow the [External Location guide](scripts/environment_setup/external_location_setup_guide.md) for AWS IAM.
+1. **Set up infrastructure** — Run [`environmentSetup.sql`](scripts/environment_setup/sql/environmentSetup.sql) to create the `movielens` catalog and schemas. Follow the [External Location guide](scripts/environment_setup/docs/external_location_setup_guide.md) for AWS IAM.
 
 2. **Upload data** — Place MovieLens CSVs in `s3://<bucket>/raw/`.
 
@@ -165,7 +163,7 @@ MovieLens-Delta-Lakehouse/
 
 4. **Schedule maintenance** — Run `scripts/maintenance/jobs/table_maintenance.py` as a separate job during off-peak hours.
 
-Full execution details, widget parameters, and troubleshooting: [`PIPELINE_GUIDE.md`](README's/PIPELINE_GUIDE.md).
+Full execution details, widget parameters, and troubleshooting: [`pipeline_guide.md`](docs/pipelines/pipeline_guide.md).
 
 ### Dashboard
 
@@ -175,17 +173,31 @@ python dashboard/services/sync_data.py          # Sync latest Parquet from S3
 streamlit run dashboard/app.py
 ```
 
+### Verification
+
+```bash
+python -m pip install -e ".[test]"
+pytest --collect-only -q
+pytest tests/unit/test_dashboard_sync_runtime.py tests/unit/test_maintenance_registry.py -q
+```
+
+Full Spark/Delta integration tests require Maven access, or cached Delta Lake jars:
+
+```bash
+pytest tests/integration -q
+```
+
 ---
 
 ## Detailed Documentation
 
 | Document | What You'll Find |
 |----------|-----------------|
-| [`ARCHITECTURE.md`](README's/ARCHITECTURE.md) | Layer contracts, data flow diagrams, S3 layout, Unity Catalog structure |
-| [`DATA_MODEL.md`](README's/DATA_MODEL.md) | Complete star schema — every table, column, PK, FK, and surrogate key |
-| [`ENGINEERING_PATTERNS.md`](README's/ENGINEERING_PATTERNS.md) | 16 design patterns, each with the problem, decision, and rationale |
-| [`PIPELINE_GUIDE.md`](README's/PIPELINE_GUIDE.md) | Step-by-step execution, widget parameters, first-run vs incremental |
-| [`DQ_AND_LINEAGE.md`](README's/DQ_AND_LINEAGE.md) | DQ rules by table, ETL metadata columns, cross-layer lineage tracing |
+| [`architecture.md`](docs/architecture/architecture.md) | Layer contracts, data flow diagrams, S3 layout, Unity Catalog structure |
+| [`data_model.md`](docs/architecture/data_model.md) | Complete star schema — every table, column, PK, FK, and surrogate key |
+| [`engineering_patterns.md`](docs/standards/engineering_patterns.md) | 16 design patterns, each with the problem, decision, and rationale |
+| [`pipeline_guide.md`](docs/pipelines/pipeline_guide.md) | Step-by-step execution, widget parameters, first-run vs incremental |
+| [`dq_and_lineage.md`](docs/architecture/dq_and_lineage.md) | DQ rules by table, ETL metadata columns, cross-layer lineage tracing |
 
 ---
 

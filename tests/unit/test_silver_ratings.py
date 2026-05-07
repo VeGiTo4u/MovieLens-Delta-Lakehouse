@@ -23,11 +23,8 @@ from pyspark.sql.types import (
 )
 
 from tests.conftest import apply_dq_flags
-from tests.helpers.silver_mirrors import (
-    make_bronze_ratings_df as _make_bronze_df,
-    ratings_dq_rules as get_dq_rules,
-    transform_ratings,
-)
+from scripts.silver.transforms.ratings import get_dq_rules, transform_ratings
+from tests.helpers.silver_mirrors import make_bronze_ratings_df as _make_bronze_df
 
 
 # ════════════════════════════════════════════════════════════════

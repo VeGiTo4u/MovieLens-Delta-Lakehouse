@@ -18,7 +18,7 @@ from pyspark.sql.types import (
 
 from tests.conftest import apply_dq_flags
 from tests.helpers.delta_support import patch_module_spark
-from tests.helpers.silver_mirrors import ratings_dq_rules, transform_ratings
+from scripts.silver.transforms.ratings import get_dq_rules as ratings_dq_rules, transform_ratings
 
 
 BRONZE_RATINGS_SCHEMA = StructType([

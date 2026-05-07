@@ -791,6 +791,8 @@ def write_incremental_merge(
                         .mode("overwrite")
                         .option("mergeSchema", "true")
         )
+        if full_table_name.endswith(".ratings"):
+            writer = writer.option("delta.enableChangeDataFeed", "true")
         if partition_by:
             writer = writer.partitionBy(*partition_by)
         writer.save(s3_target_path)
@@ -1002,6 +1004,12 @@ def register_table(target_full_table_name: str, s3_target_path: str) -> None:
         USING DELTA
         LOCATION '{s3_target_path}'
     """)
+    if target_full_table_name.endswith(".ratings"):
+        spark.sql(f"""
+            ALTER TABLE {target_full_table_name}
+            SET TBLPROPERTIES (delta.enableChangeDataFeed = true)
+        """)
+        print(f"[SUCCESS] Change Data Feed enabled: {target_full_table_name}")
     print(f"[SUCCESS] Table registered: {target_full_table_name}")
 
 # COMMAND ----------

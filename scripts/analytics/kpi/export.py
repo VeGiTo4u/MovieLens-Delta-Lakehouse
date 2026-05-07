@@ -46,13 +46,13 @@ print(f"[INFO] Output dir : {OUTPUT_DIR}")
 # ------------------------------------------------------------
 print("[START] Loading Gold layer tables")
 
-fact_ratings     = spark.table(f"{catalog_name}.gold.fact_ratings")
-dim_movies       = spark.table(f"{catalog_name}.gold.dim_movies")
-dim_genres       = spark.table(f"{catalog_name}.gold.dim_genres")
-bridge_mg        = spark.table(f"{catalog_name}.gold.bridge_movies_genres")
-dim_date         = spark.table(f"{catalog_name}.gold.dim_date")
-fact_gs          = spark.table(f"{catalog_name}.gold.fact_genome_scores")
-dim_genome_tags  = spark.table(f"{catalog_name}.gold.dim_genome_tags")
+fact_ratings     = spark.table(f"{catalog_name}.gold.fact_ratings").cache()
+dim_movies       = spark.table(f"{catalog_name}.gold.dim_movies").cache()
+dim_genres       = spark.table(f"{catalog_name}.gold.dim_genres").cache()
+bridge_mg        = spark.table(f"{catalog_name}.gold.bridge_movies_genres").cache()
+dim_date         = spark.table(f"{catalog_name}.gold.dim_date").cache()
+fact_gs          = spark.table(f"{catalog_name}.gold.fact_genome_scores").cache()
+dim_genome_tags  = spark.table(f"{catalog_name}.gold.dim_genome_tags").cache()
 
 print("[DONE] All Gold tables loaded")
 
@@ -74,7 +74,10 @@ kpi_0 = (
     )
 )
 
-kpi_0_count = kpi_0.count()
+kpi_0_row = kpi_0.collect()[0]
+kpi_0_count = 1
+total_ratings = kpi_0_row["total_ratings"]
+total_users = kpi_0_row["unique_users"]
 kpi_0.write.mode("overwrite").parquet(f"{OUTPUT_DIR}/all_time_summary.parquet")
 print(f"[DONE] all_time_summary.parquet — {kpi_0_count} rows")
 
@@ -144,7 +147,7 @@ movie_stats = (
         F.round(F.avg("rating"), 2).alias("avg_rating"),
         F.count("*").alias("rating_count"),
     )
-)
+).cache()
 
 kpi_3 = (
     movie_stats
@@ -218,7 +221,7 @@ user_counts = (
     fact_ratings
     .groupBy("user_id")
     .agg(F.count("*").alias("rating_count"))
-)
+).cache()
 
 kpi_6 = (
     user_counts
@@ -235,7 +238,7 @@ kpi_6 = (
     .agg(F.count("*").alias("user_count"))
     .withColumn(
         "pct_of_users",
-        F.round(F.col("user_count") * 100.0 / user_counts.count(), 2)
+        F.round(F.col("user_count") * 100.0 / total_users, 2)
     )
     .orderBy("activity_bucket")
 )
@@ -251,8 +254,6 @@ print(f"[DONE] user_activity_distribution.parquet — {kpi_6_count} rows")
 # Bar chart: classic 0.5–5.0 histogram
 # ============================================================
 print("[KPI 7] Rating Value Distribution")
-
-total_ratings = fact_ratings.count()
 
 kpi_7 = (
     fact_ratings
@@ -384,3 +385,16 @@ print("\n[INFO] Output stored at S3:")
 print(f"  {OUTPUT_DIR}/<filename>.parquet")
 print("[INFO] Query locally with DuckDB:")
 print("  SELECT * FROM read_parquet('rating_trends_monthly.parquet');")
+
+for df in [
+    fact_ratings,
+    dim_movies,
+    dim_genres,
+    bridge_mg,
+    dim_date,
+    fact_gs,
+    dim_genome_tags,
+    movie_stats,
+    user_counts,
+]:
+    df.unpersist()

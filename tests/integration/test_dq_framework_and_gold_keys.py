@@ -14,13 +14,17 @@ from pyspark.sql import functions as F
 from pyspark.sql.types import IntegerType, StructField, StructType
 
 from tests.conftest import apply_dq_flags
+from scripts.silver.transforms.movies import (
+    get_dq_rules as movies_dq_rules,
+    transform_movies,
+)
+from scripts.silver.transforms.ratings import (
+    get_dq_rules as ratings_dq_rules,
+    transform_ratings,
+)
 from tests.helpers.silver_mirrors import (
     make_bronze_movies_df,
     make_bronze_ratings_df,
-    movies_dq_rules,
-    ratings_dq_rules,
-    transform_movies,
-    transform_ratings,
 )
 
 

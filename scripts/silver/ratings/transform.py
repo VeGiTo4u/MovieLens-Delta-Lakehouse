@@ -42,6 +42,11 @@ source_full, target_full = build_table_names(
 # ------------------------------------------------------------
 from pyspark.sql import functions as F
 from pyspark.sql.types import IntegerType, DoubleType, TimestampType
+import sys
+
+REPO_ROOT = "/Workspace/MovieLens-Delta-Lakehouse"
+if REPO_ROOT not in sys.path:
+    sys.path.append(REPO_ROOT)
 
 # COMMAND ----------
 
@@ -220,6 +225,15 @@ def get_dq_rules():
              F.col("interaction_timestamp"), "yyyyMMdd"
          ).cast(IntegerType())),
     ]
+
+# COMMAND ----------
+
+# ------------------------------------------------------------
+# Import production transform functions.
+# Local definitions above are retained as notebook-readable reference,
+# but execution uses the package implementation tested by pytest.
+# ------------------------------------------------------------
+from scripts.silver.transforms.ratings import get_dq_rules, transform_ratings
 
 # COMMAND ----------
 

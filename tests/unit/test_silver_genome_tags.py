@@ -8,11 +8,8 @@ import pytest
 from datetime import datetime
 
 from tests.conftest import apply_dq_flags
-from tests.helpers.silver_mirrors import (
-    make_bronze_genome_tags_df as _make,
-    genome_tags_dq_rules as get_dq_rules,
-    transform_genome_tags,
-)
+from scripts.silver.transforms.genome_tags import get_dq_rules, transform_genome_tags
+from tests.helpers.silver_mirrors import make_bronze_genome_tags_df as _make
 
 
 # ═══════════════════════════════════════════════════════════════

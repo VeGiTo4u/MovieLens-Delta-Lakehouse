@@ -183,6 +183,13 @@ Bronze._input_file_name  →  exact S3 source file path
 Bronze._job_run_id  →  which Bronze Databricks Job run
 ```
 
+Gold `fact_ratings` also records CDF-driven batch audit state in
+`gold.gold_pipeline_audit`: `start_silver_version`, `end_silver_version`,
+`source_silver_version`, `processing_strategy`, `batch_year`, and run
+metadata. The first run establishes a full baseline; later runs use Silver
+Change Data Feed only to discover impacted `_batch_year` values, then read the
+current Silver table for those batches.
+
 ---
 
 ## Post-Write Validation by Layer

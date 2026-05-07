@@ -2,15 +2,15 @@
 name = "movielens-delta-lakehouse"
 version = "1.0.0"
 description = "Production-grade Delta Lake Lakehouse pipeline over MovieLens dataset"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.12"
 
 [project.optional-dependencies]
 test = [
-    "pytest>=8.0",
-    "pytest-spark>=0.6",
-    "pyspark>=3.5",
-    "chispa>=0.10",
-    "delta-spark>=3.2",
+    "pytest==8.3.5",
+    "pytest-spark==0.8.0",
+    "pyspark==3.5.1",
+    "chispa==0.10.1",
+    "delta-spark==3.2.0",
 ]
 
 [tool.pytest.ini_options]

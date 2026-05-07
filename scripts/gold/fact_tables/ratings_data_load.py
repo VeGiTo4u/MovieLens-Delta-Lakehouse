@@ -45,12 +45,12 @@ dim_date_full   = f"{target_catalog_name}.{target_schema_name}.dim_date"
 # COMMAND ----------
 
 # ------------------------------------------------------------
-# Incrementality — replay-safe batch gating with audit table
+# Incrementality — CDF-driven impacted-batch detection
 #
-# Batch replay semantics:
-#   A batch is considered "already processed" only for the same
-#   source_silver_version + model_version combination. This allows
-#   safe recomputation after Silver fixes or Gold model changes.
+# Gold uses Delta Change Data Feed only to identify which Silver
+# _batch_year values changed since the last successful Gold run for
+# this model_version. The actual Gold rows are read from the current
+# Silver table snapshot for those impacted batches.
 #
 # force_reprocess_batches:
 #   ""            -> normal incrementality
@@ -63,21 +63,30 @@ from pyspark.sql.types import IntegerType
 print("[START] Incrementality check")
 
 silver_version = get_silver_version(source_full)
+if silver_version is None:
+    raise RuntimeError(
+        f"FAILED: Cannot determine Delta version for {source_full}. "
+        "fact_ratings requires a versioned Delta Silver source for CDF incrementality."
+    )
+
 silver_batch_years = sorted(get_available_years_from_source(source_full))
 audit_full = ensure_gold_batch_audit_table(target_catalog_name, target_schema_name)
-processed_batch_years = sorted(
-    get_successfully_processed_batches(
-        audit_full_name=audit_full,
-        target_full_name=target_full,
-        source_full_name=source_full,
-        source_silver_version=silver_version,
-        model_version=model_version,
-    )
+last_successful_silver_version = get_latest_successful_silver_version(
+    audit_full_name=audit_full,
+    target_full_name=target_full,
+    source_full_name=source_full,
+    model_version=model_version,
 )
 
 if force_reprocess_batches.upper() == "ALL":
     batches_to_process = silver_batch_years
     replay_mode = "ALL"
+    processing_strategy = "FORCE_ALL"
+    cdf_start_version = (
+        last_successful_silver_version + 1
+        if last_successful_silver_version is not None
+        else None
+    )
 elif force_reprocess_batches:
     requested = sorted({
         int(part.strip())
@@ -92,17 +101,39 @@ elif force_reprocess_batches:
         )
     batches_to_process = requested
     replay_mode = "SELECTIVE"
+    processing_strategy = "FORCE_SELECTIVE"
+    cdf_start_version = (
+        last_successful_silver_version + 1
+        if last_successful_silver_version is not None
+        else None
+    )
 else:
-    batches_to_process = sorted(set(silver_batch_years) - set(processed_batch_years))
-    replay_mode = "INCREMENTAL"
+    if last_successful_silver_version is None:
+        batches_to_process = silver_batch_years
+        replay_mode = "INCREMENTAL"
+        processing_strategy = "CDF_BASELINE_FULL"
+        cdf_start_version = None
+    else:
+        cdf_start_version = last_successful_silver_version + 1
+        impacted_batches = get_cdf_impacted_batch_years(
+            source_full_name=source_full,
+            start_version=cdf_start_version,
+            end_version=silver_version,
+        )
+        batches_to_process = sorted(set(silver_batch_years) & impacted_batches)
+        replay_mode = "INCREMENTAL"
+        processing_strategy = "CDF_INCREMENTAL"
 
-batches_to_skip    = sorted(set(silver_batch_years) & set(processed_batch_years))
+batches_to_skip = sorted(set(silver_batch_years) - set(batches_to_process))
 
 print(f"[INFO] Silver batch years available : {silver_batch_years}")
-print(f"[INFO] Already in Gold              : {processed_batch_years}")
+print(f"[INFO] Last successful Silver ver.  : {last_successful_silver_version}")
+print(f"[INFO] CDF start version            : {cdf_start_version}")
+print(f"[INFO] CDF end version              : {silver_version}")
 print(f"[INFO] Batches to process           : {batches_to_process}")
 print(f"[INFO] Batches to skip              : {batches_to_skip}")
 print(f"[INFO] Replay mode                  : {replay_mode}")
+print(f"[INFO] Processing strategy          : {processing_strategy}")
 print(f"[INFO] Silver version               : {silver_version}")
 
 if not batches_to_process:
@@ -288,8 +319,11 @@ log_gold_batch_audit(
     target_full_name=target_full,
     source_full_name=source_full,
     batch_years=batches_to_process,
+    start_silver_version=cdf_start_version,
+    end_silver_version=silver_version,
     source_silver_version=silver_version,
     model_version=model_version,
+    processing_strategy=processing_strategy,
     status="SUCCESS",
     etl_meta=etl_meta,
 )
@@ -320,6 +354,8 @@ print_summary(
         "Partition column"       : "rating_year — from Silver (event year, already routed)",
         "Late arrival handling"  : "Handled by Silver MERGE — Gold reads clean partitions",
         "Replay mode"            : replay_mode,
+        "Processing strategy"    : processing_strategy,
+        "CDF version range"      : f"{cdf_start_version} → {silver_version}",
         "Idempotency"            : "MERGE on (user_id, movie_sk, interaction_timestamp)",
         "Write strategy"         : "MERGE upsert (no partition replacement)",
         "Optimization"           : "Z-ORDER BY (movie_sk, user_id)",

@@ -9,11 +9,8 @@ from datetime import datetime
 from pyspark.sql.types import ArrayType
 
 from tests.conftest import apply_dq_flags
-from tests.helpers.silver_mirrors import (
-    make_bronze_movies_df as _make,
-    movies_dq_rules as get_dq_rules,
-    transform_movies,
-)
+from scripts.silver.transforms.movies import get_dq_rules, transform_movies
+from tests.helpers.silver_mirrors import make_bronze_movies_df as _make
 
 
 # ═══════════════════════════════════════════════════════════════
