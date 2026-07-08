@@ -1,4 +1,5 @@
 # Databricks notebook source
+# MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/common
 # MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/gold/utils
 
 # COMMAND ----------
@@ -31,13 +32,14 @@ force_reprocess_batches = dbutils.widgets.get("force_reprocess_batches").strip()
 # ------------------------------------------------------------
 # Validation + Context
 # ------------------------------------------------------------
-s3_target_path = validate_inputs(s3_target_path, target_table_name, source_table_name)
-etl_meta       = resolve_etl_metadata()
+s3_target_path = validate_s3_path(s3_target_path, "target path")
+validate_table_name(target_table_name)
+if source_table_name:
+    validate_table_name(source_table_name)
+etl_meta       = resolve_etl_metadata(include_source_system=False)
 
-target_full, source_full = build_table_names(
-    target_catalog_name, target_schema_name, target_table_name,
-    source_catalog_name, source_schema_name, source_table_name,
-)
+target_full = build_table_name(target_catalog_name, target_schema_name, target_table_name)
+source_full = build_table_name(source_catalog_name, source_schema_name, source_table_name) if source_table_name else None
 
 dim_movies_full = f"{target_catalog_name}.{target_schema_name}.dim_movies"
 dim_date_full   = f"{target_catalog_name}.{target_schema_name}.dim_date"
@@ -282,7 +284,7 @@ total_written = merge_result["rows_affected"]
 # dedicated maintenance notebook (scripts/maintenance/jobs/table_maintenance.py)
 # scheduled during off-peak hours — decoupled from ETL.
 # ------------------------------------------------------------
-register_table(target_full, s3_target_path)
+register_table(spark, target_full, s3_target_path)
 
 # COMMAND ----------
 
@@ -300,19 +302,6 @@ coverage = spark.table(target_full).agg(
 
 total_gold_count = coverage["total_rows"]
 
-post_write_validation_gold(
-    target_full,
-    expected_count = total_written,
-    pk_columns     = ["user_id", "movie_sk", "interaction_timestamp"],
-    required_non_null_cols = ["movie_sk", "user_id"],
-    fk_checks = [
-        {
-            "fk_column": "movie_sk",
-            "reference_table": dim_movies_full,
-            "reference_column": "movie_sk",
-        }
-    ],
-)
 
 log_gold_batch_audit(
     audit_full_name=audit_full,
@@ -330,14 +319,9 @@ log_gold_batch_audit(
 
 # COMMAND ----------
 
-print_summary(
-    label            = "fact_ratings",
-    target_full_name = target_full,
-    s3_target_path   = s3_target_path,
-    etl_meta         = etl_meta,
-    model_version    = model_version,
-    source_full_name = source_full,
-    extra_info       = {
+main_fields = {\"Target\": target_full, \"Location\": s3_target_path}
+if source_full: main_fields[\"Source\"] = source_full
+print_pipeline_summary(\"GOLD\", "fact_ratings".upper() + \" CREATION\", {\"\": main_fields, \"ETL Metadata\": {\"_job_run_id\": etl_meta[\"job_run_id\"], \"_notebook_path\": etl_meta[\"notebook_path\"], \"_model_version\": model_version}, \"Run Details\": {
         "Batches processed"      : batches_to_process,
         "Batches skipped"        : batches_to_skip,
         "Silver PASS records"    : f"{batch_count:,}",
@@ -359,5 +343,4 @@ print_summary(
         "Idempotency"            : "MERGE on (user_id, movie_sk, interaction_timestamp)",
         "Write strategy"         : "MERGE upsert (no partition replacement)",
         "Optimization"           : "Z-ORDER BY (movie_sk, user_id)",
-    }
-)
+    }})

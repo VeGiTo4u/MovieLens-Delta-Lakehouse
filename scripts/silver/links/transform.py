@@ -1,4 +1,5 @@
 # Databricks notebook source
+# MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/common
 # MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/silver/utils
 
 # COMMAND ----------
@@ -27,13 +28,13 @@ target_schema_name  = dbutils.widgets.get("target_schema_name")
 # ------------------------------------------------------------
 # Validation + Context — Fail Fast Before Any Spark Work
 # ------------------------------------------------------------
-s3_target_path = validate_inputs(s3_target_path, source_table_name, target_table_name)
-etl_meta       = resolve_etl_metadata()
+s3_target_path = validate_s3_path(s3_target_path, "target path")
+validate_table_name(source_table_name, "source_table_name")
+validate_table_name(target_table_name, "target_table_name")
+etl_meta       = resolve_etl_metadata(include_source_system=True)
 
-source_full, target_full = build_table_names(
-    source_catalog_name, source_schema_name, source_table_name,
-    target_catalog_name, target_schema_name, target_table_name
-)
+source_full = build_table_name(source_catalog_name, source_schema_name, source_table_name)
+target_full = build_table_name(target_catalog_name, target_schema_name, target_table_name)
 
 # COMMAND ----------
 
@@ -62,71 +63,8 @@ initial_count = df_bronze.count()
 # COMMAND ----------
 
 # ------------------------------------------------------------
-# Transformation — Business Logic Isolation
-# ------------------------------------------------------------
-def transform_links(df):
-    """
-    Cleans and conforms Bronze links data to Silver standards.
-
-    Steps:
-      1. Column rename + type cast
-      2. IMDB ID formatting — prepend 'tt' prefix (e.g. tt0114709)
-         NULL imdb_id values are preserved as NULL
-      3. has_external_ids flag — True if either imdb_id or tmdb_id
-         is present. Useful for Gold FK validation completeness checks.
-
-    Note: NULL imdb_id / tmdb_id are valid — not every movie has
-    external IDs. Only NULL movie_id is a DQ failure (primary key).
-    """
-    return (
-        df
-        # Step 1: Rename + cast
-        .withColumn("movie_id", F.col("movieId").cast(IntegerType()))
-        .withColumn("imdb_id",  F.col("imdbId").cast(StringType()))
-        .withColumn("tmdb_id",  F.col("tmdbId").cast(StringType()))
-
-        # Step 2: Prepend 'tt' prefix to imdb_id where not null
-        .withColumn("imdb_id",
-                    F.when(
-                        F.col("imdb_id").isNotNull(),
-                        F.concat(F.lit("tt"), F.col("imdb_id"))
-                    ).otherwise(None))
-
-        # Step 3: Quality flag — does this movie have any external ID?
-        .withColumn("has_external_ids",
-                    F.col("imdb_id").isNotNull() | F.col("tmdb_id").isNotNull())
-
-        .select(
-            "movie_id",
-            "imdb_id",
-            "tmdb_id",
-            "has_external_ids",
-            "_ingestion_timestamp",
-        )
-    )
-
-# COMMAND ----------
-
-# ------------------------------------------------------------
-# DQ Rules for links
-# ------------------------------------------------------------
-def get_dq_rules():
-    return [
-        ("NULL_MOVIE_ID",
-         F.col("movie_id").isNull()),
-
-        # Both external IDs missing is a soft quality concern —
-        # the movie exists but has no cross-reference capability
-        ("NO_EXTERNAL_IDS",
-         ~F.col("has_external_ids")),
-    ]
-
-# COMMAND ----------
-
-# ------------------------------------------------------------
-# Import production transform functions.
-# Local definitions above are retained as notebook-readable reference,
-# but execution uses the package implementation tested by pytest.
+# Import production transform functions (single source of truth
+# in scripts/silver/transforms/links — tested by pytest).
 # ------------------------------------------------------------
 from scripts.silver.transforms.links import get_dq_rules, transform_links
 
@@ -152,15 +90,14 @@ write_static(df_silver, s3_target_path, target_table_name)
 # ------------------------------------------------------------
 # Register + Validate + Summary
 # ------------------------------------------------------------
-register_table(target_full, s3_target_path)
+register_table(spark, target_full, s3_target_path)
 
-post_write_validation(target_full, final_count)
 
 no_external_ids_count = df_silver.filter(~F.col("has_external_ids")).count()
 null_imdb_count       = df_silver.filter(F.col("imdb_id").isNull()).count()
 null_tmdb_count       = df_silver.filter(F.col("tmdb_id").isNull()).count()
 
-print_summary(
+print_pipeline_summary("SILVER", "TRANSFORMATION", 
     source_full_table_name = source_full,
     target_full_table_name = target_full,
     s3_target_path         = s3_target_path,

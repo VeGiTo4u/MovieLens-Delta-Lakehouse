@@ -36,19 +36,8 @@ jobs:
       - name: Collect tests
         run: pytest --collect-only -q
 
-      - name: Run lightweight tests
-        run: pytest tests/unit/test_dashboard_sync_runtime.py tests/unit/test_maintenance_registry.py -q
-
-      - name: Run Silver unit tests
-        run: |
-          pytest \
-            tests/unit/test_silver_ratings.py \
-            tests/unit/test_silver_tags.py \
-            tests/unit/test_silver_movies.py \
-            tests/unit/test_silver_links.py \
-            tests/unit/test_silver_genome_scores.py \
-            tests/unit/test_silver_genome_tags.py \
-            -q
+      - name: Run Unit tests
+        run: pytest tests/unit -q
 
       - name: Run Delta integration tests
         run: pytest tests/integration -q

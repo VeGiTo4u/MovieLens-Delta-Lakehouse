@@ -32,9 +32,11 @@ def _reset_spark_state():
         pass
 
     try:
-        default = SparkSession.getDefaultSession()
-        if default is not None:
-            default.stop()
+        get_default = getattr(SparkSession, "getDefaultSession", None)
+        if get_default:
+            default = get_default()
+            if default is not None:
+                default.stop()
     except Exception:
         pass
 

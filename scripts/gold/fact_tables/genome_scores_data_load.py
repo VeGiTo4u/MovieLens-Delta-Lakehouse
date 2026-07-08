@@ -1,4 +1,5 @@
 # Databricks notebook source
+# MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/common
 # MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/gold/utils
 
 # COMMAND ----------
@@ -29,13 +30,14 @@ model_version       = dbutils.widgets.get("model_version")
 # ------------------------------------------------------------
 # Validation + Context
 # ------------------------------------------------------------
-s3_target_path = validate_inputs(s3_target_path, target_table_name, source_table_name)
-etl_meta       = resolve_etl_metadata()
+s3_target_path = validate_s3_path(s3_target_path, "target path")
+validate_table_name(target_table_name)
+if source_table_name:
+    validate_table_name(source_table_name)
+etl_meta       = resolve_etl_metadata(include_source_system=False)
 
-target_full, source_full = build_table_names(
-    target_catalog_name, target_schema_name, target_table_name,
-    source_catalog_name, source_schema_name, source_table_name,
-)
+target_full = build_table_name(target_catalog_name, target_schema_name, target_table_name)
+source_full = build_table_name(source_catalog_name, source_schema_name, source_table_name) if source_table_name else None
 
 dim_movies_full      = f"{target_catalog_name}.{target_schema_name}.dim_movies"
 dim_genome_tags_full = f"{target_catalog_name}.{target_schema_name}.dim_genome_tags"
@@ -141,13 +143,9 @@ final_count = write_gold(df_gold, s3_target_path, target_table_name)
 # Note: OPTIMIZE, ANALYZE TABLE, and VACUUM are handled by the
 # dedicated maintenance notebook (scripts/maintenance/jobs/table_maintenance.py)
 # scheduled during off-peak hours — decoupled from ETL.
-register_table(target_full, s3_target_path)
+register_table(spark, target_full, s3_target_path)
 
 # Composite PK: (movie_sk, tag_sk)
-post_write_validation_gold(
-    target_full, final_count,
-    pk_columns=["movie_sk", "tag_sk"]
-)
 
 # COMMAND ----------
 
@@ -159,14 +157,9 @@ coverage = spark.table(target_full).agg(
     F.avg("relevance").alias("avg_relevance"),
 ).collect()[0]
 
-print_summary(
-    label            = "fact_genome_scores",
-    target_full_name = target_full,
-    s3_target_path   = s3_target_path,
-    etl_meta         = etl_meta,
-    model_version    = model_version,
-    source_full_name = source_full,
-    extra_info       = {
+main_fields = {\"Target\": target_full, \"Location\": s3_target_path}
+if source_full: main_fields[\"Source\"] = source_full
+print_pipeline_summary(\"GOLD\", "fact_genome_scores".upper() + \" CREATION\", {\"\": main_fields, \"ETL Metadata\": {\"_job_run_id\": etl_meta[\"job_run_id\"], \"_notebook_path\": etl_meta[\"notebook_path\"], \"_model_version\": model_version}, \"Run Details\": {
         "Silver rows (PASS)"     : f"{initial_count:,}",
         "Silver quarantined"     : f"{quarantine_count:,}",
         "Movie orphans removed"  : f"{movie_orphans_removed:,}",
@@ -183,5 +176,4 @@ print_summary(
         "Partitioning"           : "None — no time dimension",
         "Optimization"           : "Z-ORDER BY (movie_sk, tag_sk)",
         "Write strategy"         : "Full overwrite + mergeSchema",
-    }
-)
+    }})

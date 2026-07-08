@@ -8,9 +8,9 @@ import pytest
 from datetime import datetime
 from pyspark.sql.types import BooleanType, StringType
 
-from tests.conftest import apply_dq_flags
+from scripts.silver.utils import apply_dq_flags
 from scripts.silver.transforms.links import get_dq_rules, transform_links
-from tests.helpers.silver_mirrors import make_bronze_links_df as _make
+from tests.helpers.bronze_factories import make_bronze_links_df as _make
 
 
 # ═══════════════════════════════════════════════════════════════

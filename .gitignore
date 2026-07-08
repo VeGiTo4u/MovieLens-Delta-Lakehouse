@@ -57,3 +57,4 @@ dashboard/data/.sync_manifest.json
 # Pytest and logging artifacts
 *.log
 .pytest_cache/
+datasets/

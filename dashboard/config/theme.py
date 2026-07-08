@@ -8,6 +8,8 @@ Import `kpi_card()` / `callout()` for premium glassmorphic components.
 
 import streamlit as st
 
+from config.icons import ICONS
+
 # ─── Design Tokens ──────────────────────────────────────────
 COLORS = {
     "primary":    "#6C63FF",
@@ -54,29 +56,6 @@ def section_header(text: str, subtitle: str = "") -> str:
     return f'<div class="section-header">{text}{sub}</div>'
 
 
-# ─── SVG Icons — Lucide Icons Mapping ───────────────────────
-ICONS = {
-    "ratings":   '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-bar-chart"><line x1="12" x2="12" y1="20" y2="10"/><line x1="18" x2="18" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="16"/></svg>',
-    "users":     '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-users"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
-    "movies":    '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-film"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M17 3v18"/><path d="M3 7h4"/><path d="M3 12h18"/><path d="M3 17h4"/><path d="M17 12h4"/><path d="M17 7h4"/><path d="M17 17h4"/></svg>',
-    "star":      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-star"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
-    "trending-up": '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trending-up" style="display:inline; vertical-align:middle; margin-right:4px;"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>',
-    "trending-down": '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trending-down" style="display:inline; vertical-align:middle; margin-right:4px;"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>',
-    "info":      '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-info"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>',
-    "alert":     '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-alert-triangle"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
-    "check":     '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check-circle"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
-    "dna":       '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-dna"><path d="M10 16L7 19"/><path d="M14 8L17 5"/><path d="M17 10L21 6"/><path d="M12 12l-1 1"/><path d="M14 10l-2 2"/><path d="M10 14l-1 1"/><path d="M12 12l2-2"/><path d="M7 14l-4 4"/><path d="M17 19.5c-2.4-3.5-4-8.7-1-12.8"/><path d="M10 7L7 10"/><path d="M14 17l3-3"/><path d="M10 17l-3-3"/><path d="M14 7l3 3"/><path d="M7 4.5c2.4 3.5 4 8.7 1 12.8"/></svg>',
-    "genre":     '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-clapperboard"><path d="M20.2 6 3 11l-.9-2.4c-.3-.7-.1-1.5.5-1.9l16.1-4.7c.7-.2 1.5.1 1.9.7l.9 2.5c.2.3.2.6 0 .8Z"/><path d="m16 2.5 2 3.5"/><path d="m11 4 2 3.5"/><path d="m6 5.5 2 3.5"/><rect width="20" height="14.5" x="2" y="7" rx="2"/><path d="M2 12h20"/></svg>',
-    "activity":  '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-activity"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
-}
-
-
-def section_header(text: str, subtitle: str = "") -> str:
-    """Return styled section header HTML."""
-    sub = f'<span class="section-subtitle">{subtitle}</span>' if subtitle else ""
-    return f'<div class="section-header">{text}{sub}</div>'
-
-
 # ─── KPI Card Helper ────────────────────────────────────────
 def kpi_card(icon_name: str, label: str, value: str, delta: str = "",
              delta_color: str = "success"):
@@ -96,13 +75,7 @@ def kpi_card(icon_name: str, label: str, value: str, delta: str = "",
         "muted":   "#94A3B8",
     }
     d_color = color_map.get(delta_color, "#94A3B8")
-    
-    # Process delta to include trending icon if missing one
-    if delta and ("▲" in delta or "trending-up" in delta):
-        delta = delta.replace("▲", ICONS["trending-up"])
-    elif delta and ("▼" in delta or "trending-down" in delta):
-        delta = delta.replace("▼", ICONS["trending-down"])
-        
+
     delta_html = f'<div class="kpi-delta" style="color:{d_color}">{delta}</div>' if delta else ""
     icon_svg = ICONS.get(icon_name, "")
 
@@ -165,25 +138,22 @@ def callout(text: str, kind: str = "info"):
     """, unsafe_allow_html=True)
 
 
+def _css_root_block(colors: dict) -> str:
+    """Generate :root CSS variables from the COLORS design token dict."""
+    vars_css = "\n".join(f"        --{name}: {value};" for name, value in colors.items())
+    return f"    :root {{\n{vars_css}\n    }}"
+
+
 def inject_theme():
     """Inject full CSS design system. Call once per page."""
+    root_block = _css_root_block(COLORS)
     st.markdown("""
     <style>
     /* ── Google Fonts ─────────────────────────────────── */
     @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
 
     /* ── Root Variables ───────────────────────────────── */
-    :root {
-        --primary: #6C63FF;
-        --accent: #A78BFA;
-        --highlight: #F59E0B;
-        --bg: #0A0E17;
-        --surface: #111827;
-        --surface2: #1A1F2E;
-        --border: rgba(108,99,255,0.20);
-        --text: #F1F5F9;
-        --muted: #94A3B8;
-    }
+    __ROOT_BLOCK__
 
     /* ── Shimmer Keyframes ───────────────────────────── */
     @keyframes shimmer {
@@ -350,54 +320,7 @@ def inject_theme():
         font-weight: 500;
     }
 
-    /* ── Metric Cards (Fallback — native st.metric) ──── */
-    div[data-testid="stMetric"] {
-        background: linear-gradient(135deg, rgba(108,99,255,0.10) 0%, rgba(17,24,39,0.80) 100%);
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        padding: 20px 22px;
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        transition: all 0.3s ease-out;
-        position: relative;
-        overflow: hidden;
-        will-change: transform;
-    }
-    div[data-testid="stMetric"]::before {
-        content: '';
-        position: absolute;
-        top: 0; left: 0; right: 0;
-        height: 2px;
-        background: linear-gradient(90deg, var(--primary), var(--accent), transparent);
-        opacity: 0;
-        transition: opacity 0.3s ease-out;
-    }
-    div[data-testid="stMetric"]:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 30px rgba(108,99,255,0.18), 0 0 0 1px rgba(108,99,255,0.15);
-        border-color: rgba(108,99,255,0.35);
-    }
-    div[data-testid="stMetric"]:hover::before {
-        opacity: 1;
-    }
-    div[data-testid="stMetric"] label {
-        color: var(--muted) !important;
-        font-family: 'Inter', sans-serif !important;
-        font-size: 0.75rem !important;
-        font-weight: 500 !important;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-    }
-    div[data-testid="stMetric"] [data-testid="stMetricValue"] {
-        color: var(--text) !important;
-        font-family: 'Fira Code', monospace !important;
-        font-weight: 700 !important;
-        font-size: 1.6rem !important;
-    }
-    div[data-testid="stMetric"] [data-testid="stMetricDelta"] {
-        font-family: 'Fira Code', monospace !important;
-        font-size: 0.78rem !important;
-    }
+
 
     /* ── DataFrames / Tables ──────────────────────────── */
     [data-testid="stDataFrame"] {
@@ -537,8 +460,6 @@ def inject_theme():
         }
         .kpi-card,
         .kpi-card::before,
-        div[data-testid="stMetric"],
-        div[data-testid="stMetric"]::before,
         [data-testid="stSidebar"] a,
         [data-testid="stPlotlyChart"],
         .status-pill::before {
@@ -551,9 +472,7 @@ def inject_theme():
     @media (max-width: 768px) {
         .kpi-value { font-size: 1.2rem !important; }
         .kpi-card  { padding: 14px 16px; }
-        div[data-testid="stMetric"] [data-testid="stMetricValue"] {
-            font-size: 1.3rem !important;
-        }
+        .kpi-card  { padding: 14px 16px; }
     }
     </style>
     """, unsafe_allow_html=True)

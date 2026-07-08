@@ -1,4 +1,5 @@
 # Databricks notebook source
+# MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/common
 # MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/gold/utils
 
 # COMMAND ----------
@@ -28,7 +29,7 @@ model_version       = dbutils.widgets.get("model_version")
 # source_table_name is not a widget here.
 # ------------------------------------------------------------
 s3_target_path = validate_inputs(s3_target_path, target_table_name)
-etl_meta       = resolve_etl_metadata()
+etl_meta       = resolve_etl_metadata(include_source_system=False)
 
 target_full, _ = build_table_names(
     target_catalog_name, target_schema_name, target_table_name
@@ -226,9 +227,8 @@ df_gold = append_gold_metadata(
 
 final_count = write_gold(df_gold, s3_target_path, target_table_name)
 
-register_table(target_full, s3_target_path)
+register_table(spark, target_full, s3_target_path)
 
-post_write_validation_gold(target_full, final_count, pk_columns=["date_key"])
 
 # COMMAND ----------
 
@@ -240,13 +240,8 @@ stats = spark.table(target_full).agg(
     F.sum(F.when(~F.col("is_weekend"), 1).otherwise(0)).alias("weekday_days"),
 ).collect()[0]
 
-print_summary(
-    label            = "dim_date",
-    target_full_name = target_full,
-    s3_target_path   = s3_target_path,
-    etl_meta         = etl_meta,
-    model_version    = model_version,
-    extra_info       = {
+main_fields = {\"Target\": target_full, \"Location\": s3_target_path}
+print_pipeline_summary(\"GOLD\", "dim_date".upper() + \" CREATION\", {\"\": main_fields, \"ETL Metadata\": {\"_job_run_id\": etl_meta[\"job_run_id\"], \"_notebook_path\": etl_meta[\"notebook_path\"], \"_model_version\": model_version}, \"Run Details\": {
         "Date range"             : f"{START_DATE} → {END_DATE}",
         "Total days"             : f"{final_count:,}",
         "Years covered"          : f"{stats['unique_years']} ({stats['min_year']}–{stats['max_year']})",
@@ -256,5 +251,4 @@ print_summary(
         "Day-of-week convention" : "US Standard (1=Sunday, 7=Saturday)",
         "Gap detection method"   : "Spark lag() — fully distributed",
         "Write strategy"         : "Full overwrite + mergeSchema",
-    }
-)
+    }})

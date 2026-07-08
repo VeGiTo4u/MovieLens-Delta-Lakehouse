@@ -1,4 +1,5 @@
 # Databricks notebook source
+# MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/common
 # MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/gold/utils
 
 # COMMAND ----------
@@ -29,13 +30,14 @@ model_version       = dbutils.widgets.get("model_version")
 # ------------------------------------------------------------
 # Validation + Context
 # ------------------------------------------------------------
-s3_target_path = validate_inputs(s3_target_path, target_table_name, source_table_name)
-etl_meta       = resolve_etl_metadata()
+s3_target_path = validate_s3_path(s3_target_path, "target path")
+validate_table_name(target_table_name)
+if source_table_name:
+    validate_table_name(source_table_name)
+etl_meta       = resolve_etl_metadata(include_source_system=False)
 
-target_full, source_full = build_table_names(
-    target_catalog_name, target_schema_name, target_table_name,
-    source_catalog_name, source_schema_name, source_table_name,
-)
+target_full = build_table_name(target_catalog_name, target_schema_name, target_table_name)
+source_full = build_table_name(source_catalog_name, source_schema_name, source_table_name) if source_table_name else None
 
 # COMMAND ----------
 
@@ -196,10 +198,9 @@ else:
 # dedicated maintenance notebook (scripts/maintenance/jobs/table_maintenance.py)
 # scheduled during off-peak hours — decoupled from ETL.
 # ------------------------------------------------------------
-register_table(target_full, s3_target_path)
+register_table(spark, target_full, s3_target_path)
 
 expected_count = existing_count + new_genre_count
-post_write_validation_gold(target_full, expected_count, pk_columns=["genre_sk"])
 
 # COMMAND ----------
 
@@ -208,14 +209,9 @@ id_stats = spark.table(target_full).select(
     F.max("genre_id").alias("max_id"),
 ).collect()[0]
 
-print_summary(
-    label            = "dim_genres",
-    target_full_name = target_full,
-    s3_target_path   = s3_target_path,
-    etl_meta         = etl_meta,
-    model_version    = model_version,
-    source_full_name = source_full,
-    extra_info       = {
+main_fields = {\"Target\": target_full, \"Location\": s3_target_path}
+if source_full: main_fields[\"Source\"] = source_full
+print_pipeline_summary(\"GOLD\", "dim_genres".upper() + \" CREATION\", {\"\": main_fields, \"ETL Metadata\": {\"_job_run_id\": etl_meta[\"job_run_id\"], \"_notebook_path\": etl_meta[\"notebook_path\"], \"_model_version\": model_version}, \"Run Details\": {
         "Run mode"               : "Initial Load" if is_first_run else "Incremental Update",
         "Silver rows total"      : f"{initial_count:,}",
         "Quarantined (excluded)" : f"{quarantine_count:,}",
@@ -227,5 +223,4 @@ print_summary(
         "Columns"                : "genre_sk (PK), genre_id, genre_name",
         "SK generation"          : "SHA2(genre_name, 256) — natural key is genre_name",
         "Write strategy"         : "OVERWRITE (first run) / MERGE LOWER(genre_name) (incremental)",
-    }
-)
+    }})

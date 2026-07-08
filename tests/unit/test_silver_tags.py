@@ -7,9 +7,9 @@ Tests: special char removal, title-casing, timestamp conversion,
 import pytest
 from datetime import datetime
 
-from tests.conftest import apply_dq_flags
+from scripts.silver.utils import apply_dq_flags
 from scripts.silver.transforms.tags import get_dq_rules, transform_tags
-from tests.helpers.silver_mirrors import make_bronze_tags_df as _make
+from tests.helpers.bronze_factories import make_bronze_tags_df as _make
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -24,114 +24,13 @@
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
-# COMMAND ----------
-
-MIN_VACUUM_RETENTION_HOURS = 168
-
-# COMMAND ----------
-
-# ------------------------------------------------------------
-# resolve_etl_metadata
 # ------------------------------------------------------------
 def resolve_etl_metadata() -> Dict[str, str]:
-    """
-    Resolves job-level metadata from Databricks notebook context.
-
-    Uses dbruntime.databricks_repl_context — the stable Python-native
-    API (DBR 14.1+). Works on all cluster modes including Unity Catalog
-    Shared Access Mode.
-
-    Returns:
-        dict with keys: job_run_id, notebook_path
-    """
-    try:
-        from dbruntime.databricks_repl_context import get_context
-        _ctx = get_context()
-        job_run_id    = f"{_ctx.jobId or 'INTERACTIVE'}_{_ctx.currentRunId or 'INTERACTIVE'}"
-        notebook_path = _ctx.notebookPath or "UNKNOWN"
-    except Exception:
-        job_run_id    = "INTERACTIVE_INTERACTIVE"
-        notebook_path = "UNKNOWN"
-
-    return {
-        "job_run_id":    job_run_id,
-        "notebook_path": notebook_path,
-    }
+    """Resolves job-level metadata. Delegates to scripts.common.
+    Maintenance does not include source_system."""
+    return _resolve_etl_metadata(include_source_system=False)
 
 # COMMAND ----------
-
-# ============================================================
-# MAINTENANCE_CONFIG — Table Registry
-#
-# Defines which maintenance commands apply to each table
-# across all three layers. This is the single source of truth
-# for the maintenance notebook.
-#
-# Keys per table:
-#   optimize     — run OPTIMIZE (compacts small files)
-#   analyze      — run ANALYZE TABLE COMPUTE STATISTICS
-#   vacuum       — run VACUUM (removes old data files)
-#   vacuum_hours — retention period in hours for VACUUM
-#   zorder_cols  — list of columns for Z-ORDER (omit if none)
-#
-# Layer-level rules:
-#   Bronze: OPTIMIZE + VACUUM only (no ANALYZE, no Z-ORDER)
-#   Silver: OPTIMIZE + ANALYZE + VACUUM + Z-ORDER (where applicable)
-#   Gold:   OPTIMIZE + ANALYZE + VACUUM + Z-ORDER (where applicable)
-# ============================================================
-
-MAINTENANCE_CONFIG = {
-    # ----------------------------------------------------------
-    # Bronze — OPTIMIZE + VACUUM only
-    # Retention: >1 year (8760 hours)
-    # No ANALYZE — Bronze is raw ingestion, not queried by
-    # end users. Silver reads Bronze in full; optimizer stats
-    # have minimal impact.
-    # No Z-ORDER — Bronze preserves source fidelity. Reordering
-    # data files would add cost with no downstream benefit.
-    # ----------------------------------------------------------
-    "bronze": {
-        "movies":        {"optimize": True, "vacuum": True, "vacuum_hours": 8760},
-        "genome_scores": {"optimize": True, "vacuum": True, "vacuum_hours": 8760},
-        "genome_tags":   {"optimize": True, "vacuum": True, "vacuum_hours": 8760},
-        "links":         {"optimize": True, "vacuum": True, "vacuum_hours": 8760},
-        "ratings":       {"optimize": True, "vacuum": True, "vacuum_hours": 8760},
-        "tags":          {"optimize": True, "vacuum": True, "vacuum_hours": 8760},
-    },
-
-    # ----------------------------------------------------------
-    # Silver — OPTIMIZE + ANALYZE + VACUUM + Z-ORDER
-    # Retention: 7 days (168 hours)
-    # Z-ORDER: only on larger tables with common query predicates.
-    # Small/static tables (movies, links, genome_*) — OPTIMIZE only.
-    # ----------------------------------------------------------
-    "silver": {
-        "movies":        {"optimize": True, "analyze": True, "vacuum": True, "vacuum_hours": 168},
-        "genome_scores": {"optimize": True, "analyze": True, "vacuum": True, "vacuum_hours": 168},
-        "genome_tags":   {"optimize": True, "analyze": True, "vacuum": True, "vacuum_hours": 168},
-        "links":         {"optimize": True, "analyze": True, "vacuum": True, "vacuum_hours": 168},
-        "ratings":       {"optimize": True, "analyze": True, "vacuum": True, "vacuum_hours": 168, "zorder_cols": ["user_id", "movie_id"]},
-        "tags":          {"optimize": True, "analyze": True, "vacuum": True, "vacuum_hours": 168, "zorder_cols": ["user_id", "movie_id"]},
-    },
-
-    # ----------------------------------------------------------
-    # Gold — OPTIMIZE + ANALYZE + VACUUM + Z-ORDER
-    # Retention: 7 days (168 hours)
-    # Z-ORDER: on tables with frequent BI/ML query predicates.
-    # Small dims (dim_date, dim_external_links, dim_genome_tags)
-    # — OPTIMIZE only, too small to benefit from Z-ORDER.
-    # ----------------------------------------------------------
-    "gold": {
-        "dim_movies":           {"optimize": True, "analyze": True, "vacuum": True, "vacuum_hours": 168, "zorder_cols": ["movie_id"]},
-        "dim_genres":           {"optimize": True, "analyze": True, "vacuum": True, "vacuum_hours": 168, "zorder_cols": ["genre_name"]},
-        "dim_genome_tags":      {"optimize": True, "analyze": True, "vacuum": True, "vacuum_hours": 168},
-        "dim_external_links":   {"optimize": True, "analyze": True, "vacuum": True, "vacuum_hours": 168},
-        "dim_date":             {"optimize": True, "analyze": True, "vacuum": True, "vacuum_hours": 168},
-        "bridge_movies_genres": {"optimize": True, "analyze": True, "vacuum": True, "vacuum_hours": 168, "zorder_cols": ["movie_sk", "genre_sk"]},
-        "fact_ratings":         {"optimize": True, "analyze": True, "vacuum": True, "vacuum_hours": 168, "zorder_cols": ["movie_sk"]},
-        "fact_genome_scores":   {"optimize": True, "analyze": True, "vacuum": True, "vacuum_hours": 168, "zorder_cols": ["movie_sk", "tag_sk"]},
-    },
-}
 
 # COMMAND ----------
 
@@ -346,30 +245,46 @@ def run_layer_maintenance(
 ) -> List[Dict[str, Any]]:
     """
     Runs maintenance on all tables in a layer (bronze/silver/gold).
-
-    Iterates through the MAINTENANCE_CONFIG registry for the
-    given layer. Each table is processed independently — a failure
-    on one table does not block subsequent tables.
-
-    Args:
-        catalog: Unity Catalog name
-        layer: layer name key in MAINTENANCE_CONFIG
-        vacuum_retention_override: optional override for vacuum_hours
-
-    Returns:
-        list of per-table result dicts
+    Discovers tables dynamically using SHOW TABLES.
     """
-    layer_config = MAINTENANCE_CONFIG.get(layer, {})
-    if not layer_config:
-        print(f"[WARN] No maintenance config found for layer: {layer}")
-        return []
-
-    print(f"\n{'#'*60}")
-    print(f"# LAYER: {layer.upper()} — {len(layer_config)} tables")
+    print(f"\\n{'#'*60}")
+    print(f"# LAYER: {layer.upper()}")
     print(f"{'#'*60}")
 
+    try:
+        tables_df = spark.sql(f"SHOW TABLES IN {catalog}.{layer}")
+        table_names = [row.tableName for row in tables_df.collect() if not row.isTemporary]
+    except Exception as e:
+        print(f"[WARN] Could not discover tables in {catalog}.{layer}: {e}")
+        return []
+
+    print(f"[INFO] Discovered {len(table_names)} tables in {catalog}.{layer}")
+
     layer_results = []
-    for table_name, config in layer_config.items():
+    for table_name in table_names:
+        # Determine rules based on layer
+        config = {
+            "optimize": True,
+            "vacuum": True,
+            "vacuum_hours": 8760 if layer == "bronze" else 168,
+            "analyze": layer in ("silver", "gold"),
+            "zorder_cols": []
+        }
+        
+        # Determine specific Z-ORDER logic from legacy configs
+        if layer == "silver" and table_name in ("ratings", "tags"):
+            config["zorder_cols"] = ["user_id", "movie_id"]
+        elif layer == "gold" and table_name == "dim_movies":
+            config["zorder_cols"] = ["movie_id"]
+        elif layer == "gold" and table_name == "dim_genres":
+            config["zorder_cols"] = ["genre_name"]
+        elif layer == "gold" and table_name == "bridge_movies_genres":
+            config["zorder_cols"] = ["movie_sk", "genre_sk"]
+        elif layer == "gold" and table_name == "fact_ratings":
+            config["zorder_cols"] = ["movie_sk"]
+        elif layer == "gold" and table_name == "fact_genome_scores":
+            config["zorder_cols"] = ["movie_sk", "tag_sk"]
+
         try:
             result = run_table_maintenance(
                 catalog=catalog,

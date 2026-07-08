@@ -139,7 +139,7 @@ These aren't just implementation choices — each one solves a specific problem.
 | SCD Type-2 versioning | Full history on **23.8M ratings** — re-ratings tracked with `is_current`, `effective_start_date`, `effective_end_date` |
 | Late arrival handling | **3-layer observability**: Bronze detects → Silver flags + MERGE-routes to correct partition → Gold handles via MERGE upsert |
 | Cross-layer lineage | **Row-level** tracing: Gold `_source_silver_version` → Silver Delta time-travel → Bronze `_input_file_name` → exact S3 source file |
-| Post-write validation | PK uniqueness + FK referential integrity + metadata completeness checks on every Gold table |
+| Data Integrity constraints | Native Delta Lake constraints via `ALTER TABLE ... ADD CONSTRAINT` for NOT NULL and explicit CHECK constraints on every table |
 | Surrogate key strategy | **SHA2-256** deterministic hashing — idempotent across reruns, partition-safe, SCD2-ready |
 
 **DQ coverage by table:**
@@ -195,16 +195,18 @@ These aren't just implementation choices — each one solves a specific problem.
 ```
 MovieLens-Delta-Lakehouse/
 │
+├── .github/workflows/              # CI/CD pipelines (tests + dashboard sync)
 ├── scripts/
+│   ├── common.py                   # Global configuration and cross-layer helpers
 │   ├── environment_setup/          # Unity Catalog bootstrap + AWS IAM setup guide
 │   ├── bronze/                     # Raw ingestion
 │   │   ├── utils.py                #   Shared utilities for all Bronze notebooks
 │   │   └── ingestion/              #   Static and historical/incremental loaders
-│   ├── silver/                     # Cleaning & DQ (7 files)
+│   ├── silver/                     # Cleaning & DQ
 │   │   ├── utils.py                #   Shared utilities (MERGE, SCD2, DQ framework)
 │   │   ├── transforms/             #   Importable pure transform + DQ functions
 │   │   └── */transform.py          #   Per-table Databricks wrappers
-│   ├── gold/                       # Star schema (9 files)
+│   ├── gold/                       # Star schema
 │   │   ├── utils.py                #   Shared utilities (SK generation, FK joins, CDF audit)
 │   │   ├── dimensional_tables/     #   5 dimension loaders
 │   │   ├── fact_tables/            #   2 fact loaders
@@ -212,11 +214,16 @@ MovieLens-Delta-Lakehouse/
 │   ├── maintenance/                # OPTIMIZE, VACUUM, Z-ORDER (separate from ETL)
 │   └── analytics/                  # KPI export to Parquet for Streamlit
 │
+├── tests/                          # Pytest suite
+│   ├── unit/                       #   PySpark transform logic tests
+│   └── integration/                #   Delta Lake MERGE and DQ integration tests
+│
 ├── dashboard/                      # Multi-page dashboard (DuckDB + Plotly)
 │   ├── app.py                      #   Entry point
 │   ├── pages/                      #   5 pages: Trends, Movies, Genres, Users, Content DNA
-│   ├── data/                       #   Local Parquet cache (synced from S3)
-│   └── sync_data.py                #   S3 → local sync utility
+│   ├── data/                       #   Parquet KPIs fetched by AWS CLI
+│   ├── services/                   #   Dashboard business logic
+│   │   └── data_loader.py          #   DuckDB execution engine
 │
 ├── docs/                           # Deep-dive documentation
 │   ├── architecture/               #   Architecture, data model, DQ and lineage
@@ -251,7 +258,7 @@ Full execution details, widget parameters, and troubleshooting: [`pipeline_guide
 
 ```bash
 pip install -r dashboard/requirements.txt
-python dashboard/services/sync_data.py          # Sync latest Parquet from S3
+aws s3 sync s3://movielens-data-store/analytics/ dashboard/data/ --exclude "*" --include "*.parquet" --delete
 streamlit run dashboard/app.py
 ```
 
@@ -259,8 +266,8 @@ streamlit run dashboard/app.py
 
 ```bash
 python -m pip install -e ".[test]"
-pytest --collect-only -q
-pytest tests/unit/test_dashboard_sync_runtime.py tests/unit/test_maintenance_registry.py -q
+pytest tests/unit/ -q
+pytest tests/integration/ -q
 ```
 
 Full Spark/Delta integration tests require Maven access, or cached Delta Lake jars:

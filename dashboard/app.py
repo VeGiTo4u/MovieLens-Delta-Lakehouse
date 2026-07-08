@@ -10,6 +10,7 @@ import streamlit as st
 import plotly.graph_objects as go
 from services.data_loader import load_yearly_summary, load_rating_distribution, load_all_time_summary
 from services.health import evaluate_sync_manifest
+from services.render_helpers import render_yearly_table
 from config.theme import (
     inject_theme, section_header, sidebar_badges, kpi_card, callout,
     PLOTLY_LAYOUT, CHART_GRADIENT, COLORS,
@@ -128,9 +129,6 @@ fig_dist.add_trace(go.Bar(
 
 # Add average rating reference line
 avg_rating_val = weighted_avg_rating
-fig_dist.add_hline(
-    y=0, line_width=0,  # invisible — we use a shape instead
-)
 fig_dist.add_shape(
     type="line",
     x0=avg_rating_val, x1=avg_rating_val,
@@ -159,33 +157,7 @@ st.divider()
 # ── Yearly Summary Table ─────────────────────────────────────
 st.markdown(section_header("Year-over-Year Summary"), unsafe_allow_html=True)
 
-df_display = df_yearly.sort_values("year", ascending=False).copy()
-df_display.columns = [
-    "Year", "Total Ratings", "Unique Users", "Unique Movies",
-    "Avg Rating", "Late Arrivals", "Late Arrival %"
-]
-
-max_ratings = df_display["Total Ratings"].max()
-
-st.dataframe(
-    df_display,
-    use_container_width=True,
-    hide_index=True,
-    column_config={
-        "Year": st.column_config.NumberColumn("Year", format="%d"),
-        "Total Ratings": st.column_config.ProgressColumn(
-            "Total Ratings",
-            min_value=0,
-            max_value=int(max_ratings),
-            format="%d",
-        ),
-        "Unique Users": st.column_config.NumberColumn("Unique Users", format="%d"),
-        "Unique Movies": st.column_config.NumberColumn("Unique Movies", format="%d"),
-        "Avg Rating": st.column_config.NumberColumn("Avg Rating", format="%.2f"),
-        "Late Arrivals": st.column_config.NumberColumn("Late Arrivals", format="%d"),
-        "Late Arrival %": st.column_config.NumberColumn("Late Arrival %", format="%.3f%%"),
-    },
-)
+render_yearly_table(df_yearly)
 
 st.divider()
 

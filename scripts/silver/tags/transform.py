@@ -1,4 +1,5 @@
 # Databricks notebook source
+# MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/common
 # MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/silver/utils
 
 # COMMAND ----------
@@ -27,13 +28,13 @@ target_schema_name  = dbutils.widgets.get("target_schema_name")
 # ------------------------------------------------------------
 # Validation + Context — Fail Fast Before Any Spark Work
 # ------------------------------------------------------------
-s3_target_path = validate_inputs(s3_target_path, source_table_name, target_table_name)
-etl_meta       = resolve_etl_metadata()
+s3_target_path = validate_s3_path(s3_target_path, "target path")
+validate_table_name(source_table_name, "source_table_name")
+validate_table_name(target_table_name, "target_table_name")
+etl_meta       = resolve_etl_metadata(include_source_system=True)
 
-source_full, target_full = build_table_names(
-    source_catalog_name, source_schema_name, source_table_name,
-    target_catalog_name, target_schema_name, target_table_name
-)
+source_full = build_table_name(source_catalog_name, source_schema_name, source_table_name)
+target_full = build_table_name(target_catalog_name, target_schema_name, target_table_name)
 
 # COMMAND ----------
 
@@ -85,117 +86,8 @@ if not years_to_process:
 # COMMAND ----------
 
 # ------------------------------------------------------------
-# Transformation — Business Logic Isolation
-# ------------------------------------------------------------
-def transform_tags(df):
-    """
-    Cleans and conforms Bronze tags data to Silver standards.
-
-    Steps:
-      1. Column rename + type cast
-      2. Tag normalization:
-           - Trim whitespace / newlines / tabs
-           - Remove special characters (keep alphanumeric, spaces, hyphens)
-           - Collapse multiple spaces to single space
-           - Title Case formatting
-      3. Timestamp conversion (Unix epoch → TIMESTAMP)
-      4. Date key derivation (YYYYMMDD as INT)
-
-    No deduplication — all tag events are preserved.
-    A user tagging the same movie multiple times is a valid
-    event history. Deduplication is a Gold-layer decision.
-    """
-    return (
-        df
-        # Step 1: Rename + cast
-        .withColumn("user_id",  F.col("userId").cast(IntegerType()))
-        .withColumn("movie_id", F.col("movieId").cast(IntegerType()))
-        .withColumn("tag_raw",  F.col("tag").cast(StringType()))
-
-        # Step 2a: Trim + remove control characters
-        .withColumn("tag",
-                    F.trim(F.regexp_replace(F.col("tag_raw"), r"[\n\t\r]+", " ")))
-
-        # Step 2b: Remove special characters (keep letters, numbers, spaces, hyphens)
-        .withColumn("tag",
-                    F.regexp_replace(F.col("tag"), r"[^a-zA-Z0-9\s\-]", ""))
-
-        # Step 2c: Collapse multiple spaces to single space
-        .withColumn("tag",
-                    F.regexp_replace(F.col("tag"), r"\s+", " "))
-
-        # Step 2d: Final trim + Title Case
-        .withColumn("tag",
-                    F.initcap(F.trim(F.col("tag"))))
-
-        # Step 3: Unix epoch → TIMESTAMP
-        .withColumn("tag_timestamp",
-                    F.from_unixtime(F.col("timestamp")).cast(TimestampType()))
-
-        # Step 4: Date key YYYYMMDD as INT
-        .withColumn("date_key",
-                    F.date_format(F.col("tag_timestamp"), "yyyyMMdd")
-                     .cast(IntegerType()))
-
-        # Final selection — drop raw bronze columns
-        .select(
-            "user_id",
-            "movie_id",
-            "tag",
-            "tag_timestamp",
-            "date_key",
-            "_ingestion_timestamp",
-        )
-    )
-
-# COMMAND ----------
-
-# ------------------------------------------------------------
-# DQ Rules for tags
-# ------------------------------------------------------------
-def get_dq_rules():
-    return [
-        ("NULL_USER_ID",
-         F.col("user_id").isNull()),
-
-        ("NULL_MOVIE_ID",
-         F.col("movie_id").isNull()),
-
-        ("NULL_TAG",
-         F.col("tag").isNull()),
-
-        ("EMPTY_TAG",
-         F.trim(F.col("tag")) == ""),
-
-        ("NULL_TIMESTAMP",
-         F.col("tag_timestamp").isNull()),
-
-        # Guard against epoch-zero and sentinel timestamps — same reasoning
-        # as ratings INVALID_TIMESTAMP_FLOOR. A tag with timestamp=0 produces
-        # tag_timestamp=1970-01-01 which is not a real user action.
-        # isNotNull() guard ensures we don't compare against a null value —
-        # NULL_TIMESTAMP quarantines those rows before this rule fires.
-        ("INVALID_TIMESTAMP_FLOOR",
-         F.col("tag_timestamp").isNotNull() &
-         (F.col("tag_timestamp") < F.lit("1995-01-01").cast(TimestampType()))),
-
-        # Tags must be at least 3 characters to be meaningful
-        ("SHORT_TAG",
-         F.length(F.col("tag")) < 3),
-
-        # date_key derivation consistency check
-        ("DATE_KEY_MISMATCH",
-         F.col("date_key") != F.date_format(
-             F.col("tag_timestamp"), "yyyyMMdd"
-         ).cast(IntegerType())),
-    ]
-
-# COMMAND ----------
-
-# ------------------------------------------------------------
-# Import production transform functions.
-# Local definitions above are retained as notebook-readable reference,
-# but execution uses the package implementation tested by pytest.
+# Import production transform functions (single source of truth
+# in scripts/silver/transforms/tags — tested by pytest).
 # ------------------------------------------------------------
 from scripts.silver.transforms.tags import get_dq_rules, transform_tags
 
@@ -253,7 +145,7 @@ for year in years_to_process:
     # SHOW PARTITIONS works on retry if the loop fails mid-way.
     # CREATE TABLE IF NOT EXISTS is a no-op on subsequent iterations.
     if year == years_to_process[0]:
-        register_table(target_full, s3_target_path)
+        register_table(spark, target_full, s3_target_path)
 
     total_processed  += year_final_count
     total_quarantine += year_quarantine_count
@@ -264,11 +156,10 @@ for year in years_to_process:
 # ------------------------------------------------------------
 # Register + Validate + Summary
 # ------------------------------------------------------------
-register_table(target_full, s3_target_path)
+register_table(spark, target_full, s3_target_path)
 
-post_write_validation(target_full, total_processed)
 
-print_summary(
+print_pipeline_summary("SILVER", "TRANSFORMATION", 
     source_full_table_name = source_full,
     target_full_table_name = target_full,
     s3_target_path         = s3_target_path,

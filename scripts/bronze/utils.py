@@ -32,187 +32,20 @@ from pyspark.sql import DataFrame
 from pyspark.sql.utils import AnalysisException
 from typing import Dict, List, Any
 
-# COMMAND ----------
-
-# ------------------------------------------------------------
-# resolve_etl_metadata
-# ------------------------------------------------------------
-def resolve_etl_metadata() -> Dict[str, str]:
-    """
-    Resolves job-level ETL metadata from Databricks notebook context.
-
-    Uses dbruntime.databricks_repl_context — the stable Python-native
-    API (DBR 14.1+). Works on all cluster modes including Unity Catalog
-    Shared Access Mode where dbutils.notebook.entry_point raises
-    Py4JSecurityException.
-
-    Resolved once at notebook startup — not inside loops — so all
-    rows in a given batch share identical job-level metadata.
-
-    Returns:
-        dict with keys: job_run_id, notebook_path, source_system
-    """
-    from dbruntime.databricks_repl_context import get_context
-
-    _ctx = get_context()
-
-    job_id        = _ctx.jobId        or os.environ.get("DATABRICKS_JOB_ID", "INTERACTIVE")
-    run_id        = _ctx.currentRunId or "INTERACTIVE"
-    job_run_id    = f"{job_id}_{run_id}"
-    notebook_path = _ctx.notebookPath or "UNKNOWN"
-    source_system = "S3_MovieLens"
-
-    print("[INFO] ETL Metadata resolved:")
-    print(f"  _job_run_id    : {job_run_id}")
-    print(f"  _notebook_path : {notebook_path}")
-    print(f"  _source_system : {source_system}")
-
-    return {
-        "job_run_id":    job_run_id,
-        "notebook_path": notebook_path,
-        "source_system": source_system,
-    }
+try:
+    from scripts.common import *
+except ImportError:
+    pass
 
 # COMMAND ----------
 
-# ------------------------------------------------------------
-# validate_inputs
-# ------------------------------------------------------------
-def validate_inputs(
-    s3_source_path: str,
-    s3_target_path: str,
-    table_name:     str
-) -> tuple:
-    """
-    Validates and normalizes widget inputs.
-    Fails fast on misconfigured jobs before any Spark work is done.
-
-    Returns:
-        (normalized_s3_source_path, normalized_s3_target_path)
-        Both guaranteed to have a trailing slash.
-    """
-    if not s3_source_path or not s3_source_path.startswith("s3://"):
-        raise ValueError(f"CONFIGURATION ERROR: Invalid source path '{s3_source_path}'")
-
-    if not s3_target_path or not s3_target_path.startswith("s3://"):
-        raise ValueError(f"CONFIGURATION ERROR: Invalid target path '{s3_target_path}'")
-
-    if not table_name:
-        raise ValueError("CONFIGURATION ERROR: table_name not provided")
-
-    if not s3_source_path.endswith("/"):
-        s3_source_path += "/"
-
-    if not s3_target_path.endswith("/"):
-        s3_target_path += "/"
-
-    print("[INFO] Input validation passed")
-    return s3_source_path, s3_target_path
+# COMMAND ----------
 
 # COMMAND ----------
 
-# ------------------------------------------------------------
-# build_table_name
-# ------------------------------------------------------------
-def build_table_name(catalog: str, schema: str, table: str) -> str:
-    """
-    Builds a fully qualified Unity Catalog table name.
-
-    Returns:
-        "<catalog>.<schema>.<table>"
-    """
-    full_name = f"{catalog}.{schema}.{table}"
-    print(f"[INFO] Target table : {full_name}")
-    return full_name
-
 # COMMAND ----------
 
-# ------------------------------------------------------------
-# get_partition_years
-# ------------------------------------------------------------
-def get_partition_years(full_table_name: str) -> set:
-    """
-    Returns the set of _batch_year partition values for a Delta
-    table using SHOW PARTITIONS — a pure metadata read against
-    the Delta transaction log. Zero data files are opened.
-
-    Why SHOW PARTITIONS instead of distinct().collect():
-        distinct().collect() triggers a full table scan to find
-        unique values. On a 100M-row table with 10 partition years,
-        Spark still reads every row. SHOW PARTITIONS reads only the
-        _delta_log partition metadata — O(partitions), not O(rows).
-        The performance difference is astronomical at scale, and the
-        result is identical.
-
-    Partition format returned by Databricks SHOW PARTITIONS:
-        Each row has a single column "partition" with value like:
-        "_batch_year=2022"
-        We extract the integer after "=" to get the year.
-
-    Returns:
-        Set of available _batch_year values as ints.
-        Empty set if the table does not exist (first run).
-    """
-    try:
-        rows = spark.sql(f"SHOW PARTITIONS {full_table_name}").collect()
-        years = set()
-        for row in rows:
-            val = str(row[0]).strip()
-            # Handle both formats:
-            #   "_batch_year=2022"  (key=value from some DBR versions)
-            #   "2022"             (plain value from other DBR versions)
-            if "_batch_year=" in val:
-                years.add(int(val.split("_batch_year=")[1]))
-            else:
-                years.add(int(val))
-        return years
-    except AnalysisException as e:
-        error_msg = str(e)
-        # Table does not exist yet (first run) — expected, return empty set.
-        if "TABLE_OR_VIEW_NOT_FOUND" in error_msg or "table or view" in error_msg.lower():
-            print(f"[INFO] Table not found (expected on first run): {full_table_name}")
-            return set()
-        # Any other AnalysisException is unexpected — propagate so the
-        # operator sees the real error instead of silently reprocessing.
-        raise
-
 # COMMAND ----------
-
-# ------------------------------------------------------------
-# _read_write_metrics  (internal helper)
-# ------------------------------------------------------------
-def _read_write_metrics(s3_target_path: str) -> int:
-    """
-    Reads numOutputRows from the Delta transaction log entry
-    produced by the most recent write operation.
-
-    Uses DeltaTable.forPath (not forName) so it works immediately
-    after a write, before Unity Catalog registration has happened.
-    Reads a single JSON file from _delta_log — no data files opened.
-
-    Why this is safe to trust:
-        Delta's write contract guarantees that if the write call
-        returns without exception, exactly numOutputRows rows were
-        committed atomically. The log entry is the write receipt.
-
-    Returns:
-        numOutputRows as int, or -1 if metrics cannot be read.
-        -1 is non-blocking — callers log a warning and continue.
-    """
-    from delta.tables import DeltaTable
-    try:
-        metrics = (
-            DeltaTable.forPath(spark, s3_target_path)
-                      .history(1)
-                      .select("operationMetrics")
-                      .collect()[0]["operationMetrics"]
-        )
-        count = int(metrics.get("numOutputRows", -1))
-        print(f"[INFO] Records committed (Delta log): {count:,}")
-        return count
-    except Exception as e:
-        print(f"[WARN] Could not read write metrics from Delta log: {e}")
-        return -1
 
 # COMMAND ----------
 
@@ -363,7 +196,7 @@ def get_already_processed_years_bronze(full_table_name: str) -> set:
     Returns:
         Set of already-processed years (empty set on first run)
     """
-    already_processed = get_partition_years(full_table_name)
+    already_processed = get_partition_years(spark, full_table_name)
 
     if already_processed:
         print(f"[INFO] Already processed years in Bronze: {sorted(already_processed)}")
@@ -416,7 +249,7 @@ def write_static_bronze(df: DataFrame, s3_target_path: str, table_name: str) -> 
         )
 
     # Read committed count from Delta log — no data scan
-    count = _read_write_metrics(s3_target_path)
+    count = read_write_metrics(spark, s3_target_path)
     return count
 
 # COMMAND ----------
@@ -480,125 +313,12 @@ def write_incremental_bronze(
         )
 
     # Read committed count from Delta log — no data scan
-    count = _read_write_metrics(s3_target_path)
+    count = read_write_metrics(spark, s3_target_path)
     return count
 
 # COMMAND ----------
 
-# ------------------------------------------------------------
-# register_table
-# ------------------------------------------------------------
-def register_table(full_table_name: str, s3_target_path: str) -> None:
-    """
-    Registers the Delta table in Unity Catalog.
-    CREATE TABLE IF NOT EXISTS is a no-op on subsequent runs —
-    safe to call on every execution.
-
-    Storage and metadata are intentionally decoupled:
-    Delta files exist on S3 independently of the catalog entry.
-    Dropping the catalog entry does not delete data.
-    """
-    spark.sql(f"""
-        CREATE TABLE IF NOT EXISTS {full_table_name}
-        USING DELTA
-        LOCATION '{s3_target_path}'
-    """)
-    print(f"[SUCCESS] Table registered: {full_table_name}")
-
 # COMMAND ----------
-
-# ------------------------------------------------------------
-# post_write_validation_bronze
-# ------------------------------------------------------------
-def post_write_validation_bronze(
-    full_table_name: str,
-    expected_count:  int,
-    processed_years: list = None
-) -> None:
-    """
-    Validates the registered Bronze table after write.
-
-    What this checks:
-      1. Logs the expected record count (from Delta transaction log —
-         no re-scan). Delta ACID guarantees the committed count equals
-         what write_static/incremental_bronze returned, so a redundant
-         equality check adds no safety while doubling scan cost.
-      2. All ETL metadata columns are present and non-NULL in the
-         newly written data. This is the real correctness check —
-         NULL metadata means context resolution or the write itself
-         silently failed, which must be caught before Silver runs.
-
-    Why the count re-scan was removed:
-        The old implementation read df_val.count() from the registered
-        table and compared it to expected_count. Both values were
-        derived from the same data, making the check circular. More
-        importantly, on a large table it triggered a full scan just
-        to confirm what the Delta log already told us. Delta ACID
-        means if write() returned without exception, the data is there
-        and complete — no post-hoc scan needed for that guarantee.
-
-    The NULL check still scans the table (scoped to processed_years
-    for incremental tables) — this is intentional and retained because
-    metadata correctness cannot be inferred from the log alone.
-    """
-    print("[START] Post-write validation")
-    print(f"[INFO]  Expected records (from Delta log): {expected_count:,}")
-
-    try:
-        if expected_count == 0:
-            raise ValueError(
-                "FAILED: Zero records committed according to Delta log. "
-                "Aborting to prevent silent empty-table propagation."
-            )
-
-        # Scope to processed years for incremental tables — avoids
-        # scanning partitions from previous runs unnecessarily
-        if processed_years:
-            df_val = spark.table(full_table_name).filter(
-                F.col("_batch_year").isin(processed_years)
-            )
-        else:
-            df_val = spark.table(full_table_name)
-
-        # Core metadata columns — present in all bronze tables
-        meta_cols = [
-            "_input_file_name",
-            "_ingestion_timestamp",
-            "_job_run_id",
-            "_notebook_path",
-            "_source_system",
-        ]
-
-        # _batch_id and _batch_year only exist on incremental tables
-        if "_batch_id" in df_val.columns:
-            meta_cols.append("_batch_id")
-        if "_batch_year" in df_val.columns:
-            meta_cols.append("_batch_year")
-
-        # Single-pass aggregation — all NULL checks in one Spark action
-        null_counts = df_val.select([
-            F.count(F.when(F.col(c).isNull(), 1)).alias(c)
-            for c in meta_cols
-        ]).collect()[0]
-
-        all_passed = True
-        for col_name in meta_cols:
-            null_count = null_counts[col_name]
-            status     = "[PASS]" if null_count == 0 else "[FAIL]"
-            if null_count > 0:
-                all_passed = False
-            print(f"  {status} {col_name}: {null_count:,} NULLs")
-
-        if not all_passed:
-            raise ValueError(
-                "FAILED: NULL values found in ETL metadata columns. "
-                "Check context resolution and write logic."
-            )
-
-        print("[SUCCESS] Post-write validation passed")
-
-    except Exception as e:
-        raise RuntimeError(f"Post-write validation failed: {e}")
 
 # COMMAND ----------
 
@@ -709,60 +429,18 @@ def detect_cross_year_records(
 
 # COMMAND ----------
 
-# ------------------------------------------------------------
-# print_summary
-# ------------------------------------------------------------
-def print_summary(
-    label:           str,
-    full_table_name: str,
-    s3_source_path:  str,
-    s3_target_path:  str,
-    etl_meta:        Dict[str, str],
-    extra_info:      Dict[str, Any] = None
-) -> None:
-    """
-    Prints a standardized run summary for Bronze notebooks.
-    extra_info accepts loader-specific metrics.
-    """
-    print("\n" + "=" * 70)
-    print(f"BRONZE {label.upper()} INGESTION SUMMARY")
-    print("=" * 70)
-    print(f"Table          : {full_table_name}")
-    print(f"Source         : {s3_source_path}")
-    print(f"Target         : {s3_target_path}")
-    print(f"\nETL Metadata")
-    print(f"  _job_run_id    : {etl_meta['job_run_id']}")
-    print(f"  _notebook_path : {etl_meta['notebook_path']}")
-    print(f"  _source_system : {etl_meta['source_system']}")
-
-    if extra_info:
-        print(f"\nRun Details")
-        for key, val in extra_info.items():
-            print(f"  {key:<26}: {val}")
-
-    print("=" * 70)
-    print(f"[END] Bronze {label} ingestion completed successfully")
-    print("=" * 70)
-
 # COMMAND ----------
 
 print("[INFO] bronze_utils loaded successfully")
 print("[INFO] Available functions:")
 _utils_functions = [
-    "resolve_etl_metadata()",
-    "validate_inputs()",
-    "build_table_name()",
-    "get_partition_years()",
     "append_static_metadata()",
     "append_incremental_metadata()",
     "write_static_bronze()",
     "write_incremental_bronze()",
     "discover_s3_years()",
     "get_already_processed_years_bronze()",
-    "register_table()",
-    "post_write_validation_bronze()",
     "detect_cross_year_records()",
-    "print_summary()",
 ]
 for fn in _utils_functions:
     print(f"  - {fn}")

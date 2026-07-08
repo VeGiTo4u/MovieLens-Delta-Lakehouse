@@ -22,9 +22,9 @@ from pyspark.sql.types import (
     TimestampType,
 )
 
-from tests.conftest import apply_dq_flags
+from scripts.silver.utils import apply_dq_flags
 from scripts.silver.transforms.ratings import get_dq_rules, transform_ratings
-from tests.helpers.silver_mirrors import make_bronze_ratings_df as _make_bronze_df
+from tests.helpers.bronze_factories import make_bronze_ratings_df as _make_bronze_df
 
 
 # ════════════════════════════════════════════════════════════════

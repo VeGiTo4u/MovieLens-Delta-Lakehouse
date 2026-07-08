@@ -1,4 +1,5 @@
 # Databricks notebook source
+# MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/common
 # MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/bronze/utils
 
 # COMMAND ----------
@@ -30,10 +31,10 @@ schema_name    = dbutils.widgets.get("schema_name")
 # Validates inputs and resolves ETL metadata upfront so failures
 # surface immediately, not after a costly S3 scan or write.
 # ------------------------------------------------------------
-s3_source_path, s3_target_path = validate_inputs(
-    s3_source_path, s3_target_path, table_name
-)
-etl_meta        = resolve_etl_metadata()
+s3_source_path = validate_s3_path(s3_source_path, "source path")
+s3_target_path = validate_s3_path(s3_target_path, "target path")
+validate_table_name(table_name)
+etl_meta        = resolve_etl_metadata(include_source_system=True)
 full_table_name = build_table_name(catalog_name, schema_name, table_name)
 
 # COMMAND ----------
@@ -146,7 +147,7 @@ for year in years_to_process:
         # SHOW PARTITIONS works on retry if the loop fails mid-way.
         # CREATE TABLE IF NOT EXISTS is a no-op on subsequent iterations.
         if len(processed_years) == 0:
-            register_table(full_table_name, s3_target_path)
+            register_table(spark, full_table_name, s3_target_path)
 
         processed_years.append(year)
         total_written += year_written
@@ -199,17 +200,23 @@ for year in years_to_process:
 # ------------------------------------------------------------
 # Register + Validate + Summary
 # ------------------------------------------------------------
-register_table(full_table_name, s3_target_path)
+register_table(spark, full_table_name, s3_target_path)
 
-post_write_validation_bronze(full_table_name, total_written, processed_years)
 
 print_summary(
     label           = "Incremental",
-    full_table_name = full_table_name,
-    s3_source_path  = s3_source_path,
-    s3_target_path  = s3_target_path,
-    etl_meta        = etl_meta,
-    extra_info      = {
+    {
+        "": {
+            "Table": full_table_name,
+            "Source": s3_source_path,
+            "Target": s3_target_path,
+        },
+        "ETL Metadata": {
+            "_job_run_id": etl_meta["job_run_id"],
+            "_notebook_path": etl_meta["notebook_path"],
+            "_source_system": etl_meta["source_system"],
+        },
+        "Run Details": {
         "Available years on S3"  : sorted(available_years),
         "Years processed"        : processed_years,
         "Years skipped (Delta)"  : years_to_skip,
@@ -220,4 +227,4 @@ print_summary(
         **({f"Cross-year [year {y}]": v for y, v in extra_cross_year_info.items()}
            if extra_cross_year_info else {"Cross-year anomalies": "None detected"}),
     }
-)
+})

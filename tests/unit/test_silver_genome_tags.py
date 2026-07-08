@@ -7,9 +7,9 @@ Tests: tag formatting (whitespace collapse, Title Case), column casting,
 import pytest
 from datetime import datetime
 
-from tests.conftest import apply_dq_flags
+from scripts.silver.utils import apply_dq_flags
 from scripts.silver.transforms.genome_tags import get_dq_rules, transform_genome_tags
-from tests.helpers.silver_mirrors import make_bronze_genome_tags_df as _make
+from tests.helpers.bronze_factories import make_bronze_genome_tags_df as _make
 
 
 # ═══════════════════════════════════════════════════════════════

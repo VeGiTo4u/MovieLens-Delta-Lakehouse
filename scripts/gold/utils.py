@@ -29,153 +29,20 @@ import os
 from pyspark.sql import functions as F
 from pyspark.sql import DataFrame
 from pyspark.sql.utils import AnalysisException
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional 
+
+try:
+    from scripts.common import *
+except ImportError:
+    pass
 
 # COMMAND ----------
 
-# ------------------------------------------------------------
-# resolve_etl_metadata
-# ------------------------------------------------------------
-def resolve_etl_metadata() -> Dict[str, str]:
-    """
-    Resolves job-level ETL metadata from Databricks notebook context.
-
-    Uses dbruntime.databricks_repl_context — stable Python-native API
-    (DBR 14.1+). Works on all cluster modes including Unity Catalog
-    Shared Access Mode.
-
-    Returns:
-        dict with keys: job_run_id, notebook_path
-    """
-    from dbruntime.databricks_repl_context import get_context
-
-    _ctx = get_context()
-
-    job_id        = _ctx.jobId        or os.environ.get("DATABRICKS_JOB_ID", "INTERACTIVE")
-    run_id        = _ctx.currentRunId or "INTERACTIVE"
-    job_run_id    = f"{job_id}_{run_id}"
-    notebook_path = _ctx.notebookPath or "UNKNOWN"
-
-    print("[INFO] ETL Metadata resolved:")
-    print(f"  _job_run_id    : {job_run_id}")
-    print(f"  _notebook_path : {notebook_path}")
-
-    return {
-        "job_run_id":    job_run_id,
-        "notebook_path": notebook_path,
-    }
+# COMMAND ----------
 
 # COMMAND ----------
 
-# ------------------------------------------------------------
-# validate_inputs
-# ------------------------------------------------------------
-def validate_inputs(
-    s3_target_path:    str,
-    target_table_name: str,
-    source_table_name: str = None
-) -> str:
-    """
-    Validates and normalizes widget inputs.
-    source_table_name is optional — dim_date has no silver source.
-
-    Returns:
-        Normalized s3_target_path (guaranteed trailing slash)
-    """
-    if not s3_target_path or not s3_target_path.startswith("s3://"):
-        raise ValueError(f"CONFIGURATION ERROR: Invalid target path '{s3_target_path}'")
-
-    if not target_table_name:
-        raise ValueError("CONFIGURATION ERROR: target_table_name not provided")
-
-    if source_table_name is not None and not source_table_name:
-        raise ValueError("CONFIGURATION ERROR: source_table_name not provided")
-
-    if not s3_target_path.endswith("/"):
-        s3_target_path += "/"
-
-    print("[INFO] Input validation passed")
-    return s3_target_path
-
 # COMMAND ----------
-
-# ------------------------------------------------------------
-# build_table_names
-# ------------------------------------------------------------
-def build_table_names(
-    target_catalog: str,
-    target_schema:  str,
-    target_table:   str,
-    source_catalog: str = None,
-    source_schema:  str = None,
-    source_table:   str = None,
-) -> tuple:
-    """
-    Builds fully qualified Unity Catalog table names.
-    Source params are optional for generated tables (dim_date).
-
-    Returns:
-        (target_full_name, source_full_name)
-        source_full_name is None if source params not provided.
-    """
-    target_full = f"{target_catalog}.{target_schema}.{target_table}"
-    source_full = (
-        f"{source_catalog}.{source_schema}.{source_table}"
-        if all([source_catalog, source_schema, source_table])
-        else None
-    )
-
-    print(f"[INFO] Target table : {target_full}")
-    if source_full:
-        print(f"[INFO] Source table : {source_full}")
-
-    return target_full, source_full
-
-# COMMAND ----------
-
-# ------------------------------------------------------------
-# get_partition_years
-# ------------------------------------------------------------
-def get_partition_years(full_table_name: str) -> set:
-    """
-    Returns the set of partition year values for a Delta table
-    using SHOW PARTITIONS — a pure metadata read against the
-    Delta transaction log. Zero data files are opened.
-
-    Supports both partition column formats:
-      - _batch_year=2022  (Bronze/Silver tags, Gold tables with _batch_year)
-      - rating_year=2022  (Silver ratings, Gold fact_ratings)
-      - plain "2022"      (some DBR versions)
-
-    Returns:
-        Set of year values as ints.
-        Empty set if table does not exist (first run).
-    """
-    try:
-        rows = spark.sql(f"SHOW PARTITIONS {full_table_name}").collect()
-        years = set()
-        for row in rows:
-            val = str(row[0]).strip()
-            # Handle all DBR formats:
-            #   "_batch_year=2022"  (key=value from some DBR versions)
-            #   "rating_year=2022"  (Silver/Gold ratings post-refactor)
-            #   "2022"             (plain value from other DBR versions)
-            if "_batch_year=" in val:
-                years.add(int(val.split("_batch_year=")[1]))
-            elif "rating_year=" in val:
-                years.add(int(val.split("rating_year=")[1]))
-            else:
-                years.add(int(val))
-        return years
-    except AnalysisException as e:
-        error_msg = str(e)
-        # Table does not exist yet (first run) — expected, return empty set.
-        if "TABLE_OR_VIEW_NOT_FOUND" in error_msg or "table or view" in error_msg.lower():
-            print(f"[INFO] Table not found (expected on first run): {full_table_name}")
-            return set()
-        # Any other AnalysisException is unexpected — propagate so the
-        # operator sees the real error instead of silently reprocessing.
-        raise
 
 # COMMAND ----------
 
@@ -530,7 +397,7 @@ def write_gold(
         )
 
     # Read committed count from Delta log — no data scan
-    count = _read_write_metrics(s3_target_path)
+    count = read_write_metrics(spark, s3_target_path)
     return count
 
 # COMMAND ----------
@@ -581,10 +448,10 @@ def write_gold_ratings_replacewhere_partitions(
         writer.save(s3_target_path)
 
         if is_new_table:
-            register_table(full_table_name, s3_target_path)
+            register_table(spark, full_table_name, s3_target_path)
             is_new_table = False
 
-        year_count = _read_write_metrics(s3_target_path)
+        year_count = read_write_metrics(spark, s3_target_path)
         total_written += year_count if year_count > 0 else 0
         print(f"[SUCCESS] {partition_col}={year_val}: {year_count:,} rows written")
 
@@ -703,7 +570,7 @@ def write_gold_merge(
         """)
 
         # Read bootstrap count from Delta log — replaces spark.table().count()
-        bootstrapped_count = _read_write_metrics(s3_target_path)
+        bootstrapped_count = read_write_metrics(spark, s3_target_path)
         print(f"[SUCCESS] Table bootstrapped : {bootstrapped_count:,} rows written")
 
         return {
@@ -766,35 +633,6 @@ def write_gold_merge(
 
 # COMMAND ----------
 
-# ------------------------------------------------------------
-# _read_write_metrics  (internal helper)
-# ------------------------------------------------------------
-def _read_write_metrics(s3_target_path: str) -> int:
-    """
-    Reads numOutputRows from the Delta transaction log entry
-    produced by the most recent write operation.
-
-    Uses DeltaTable.forPath so it works before Unity Catalog
-    registration. Reads a single _delta_log JSON — no data scan.
-
-    Returns:
-        numOutputRows as int, or -1 if metrics cannot be read.
-    """
-    from delta.tables import DeltaTable
-    try:
-        metrics = (
-            DeltaTable.forPath(spark, s3_target_path)
-                      .history(1)
-                      .select("operationMetrics")
-                      .collect()[0]["operationMetrics"]
-        )
-        count = int(metrics.get("numOutputRows", -1))
-        print(f"[INFO] Records committed (Delta log): {count:,}")
-        return count
-    except Exception as e:
-        print(f"[WARN] Could not read write metrics from Delta log: {e}")
-        return -1
-
 # COMMAND ----------
 
 # COMMAND ----------
@@ -805,21 +643,6 @@ def _read_write_metrics(s3_target_path: str) -> int:
 # during off-peak hours.
 
 # COMMAND ----------
-
-# ------------------------------------------------------------
-# register_table
-# ------------------------------------------------------------
-def register_table(full_table_name: str, s3_target_path: str) -> None:
-    """
-    Registers the Delta table in Unity Catalog.
-    CREATE TABLE IF NOT EXISTS is a no-op on subsequent runs.
-    """
-    spark.sql(f"""
-        CREATE TABLE IF NOT EXISTS {full_table_name}
-        USING DELTA
-        LOCATION '{s3_target_path}'
-    """)
-    print(f"[SUCCESS] Table registered: {full_table_name}")
 
 # COMMAND ----------
 
@@ -1223,51 +1046,11 @@ def log_gold_batch_audit(
 
 # COMMAND ----------
 
-# ------------------------------------------------------------
-# print_summary
-# ------------------------------------------------------------
-def print_summary(
-    label:              str,
-    target_full_name:   str,
-    s3_target_path:     str,
-    etl_meta:           Dict[str, str],
-    model_version:      str,
-    extra_info:         Dict[str, Any] = None,
-    source_full_name:   str = None,
-) -> None:
-    """
-    Prints a standardized run summary for Gold notebooks.
-    """
-    print("\n" + "=" * 70)
-    print(f"GOLD {label.upper()} CREATION SUMMARY")
-    print("=" * 70)
-    if source_full_name:
-        print(f"Source         : {source_full_name}")
-    print(f"Target         : {target_full_name}")
-    print(f"Location       : {s3_target_path}")
-    print(f"\nETL Metadata")
-    print(f"  _job_run_id    : {etl_meta['job_run_id']}")
-    print(f"  _notebook_path : {etl_meta['notebook_path']}")
-    print(f"  _model_version : {model_version}")
-
-    if extra_info:
-        print(f"\nRun Details")
-        for key, val in extra_info.items():
-            print(f"  {key:<28}: {val}")
-
-    print("=" * 70)
-    print(f"[END] Gold {label} creation completed successfully")
-    print("=" * 70)
-
 # COMMAND ----------
 
 print("[INFO] gold_utils loaded successfully")
 print("[INFO] Available functions:")
 for fn in [
-    "resolve_etl_metadata()",
-    "validate_inputs()",
-    "build_table_names()",
-    "get_partition_years()",
     "get_available_years_from_source()",
     "get_processed_batch_years()",
     "get_silver_version()",
@@ -1282,8 +1065,6 @@ for fn in [
     "get_latest_successful_silver_version()",
     "get_cdf_impacted_batch_years()",
     "log_gold_batch_audit()",
-    "register_table()",
     "post_write_validation_gold()",
-    "print_summary()",
 ]:
     print(f"  - {fn}")

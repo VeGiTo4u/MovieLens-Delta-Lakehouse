@@ -2,7 +2,7 @@
 test_dq_framework_and_gold_keys.py — cross-layer DQ wiring + Gold key behavior.
 
 Scope owned by this suite:
-  1. DQ framework wiring via apply_dq_flags using shared Silver mirror helpers
+  1. DQ framework wiring via apply_dq_flags using production Silver transforms
   2. Surrogate key determinism for Gold models
   3. Gold pass-through filtering behavior for PASS vs QUARANTINE records
 """
@@ -13,7 +13,7 @@ import pytest
 from pyspark.sql import functions as F
 from pyspark.sql.types import IntegerType, StructField, StructType
 
-from tests.conftest import apply_dq_flags
+from scripts.silver.utils import apply_dq_flags
 from scripts.silver.transforms.movies import (
     get_dq_rules as movies_dq_rules,
     transform_movies,
@@ -22,7 +22,7 @@ from scripts.silver.transforms.ratings import (
     get_dq_rules as ratings_dq_rules,
     transform_ratings,
 )
-from tests.helpers.silver_mirrors import (
+from tests.helpers.bronze_factories import (
     make_bronze_movies_df,
     make_bronze_ratings_df,
 )

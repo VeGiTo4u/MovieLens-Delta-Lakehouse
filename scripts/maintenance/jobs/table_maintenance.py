@@ -1,4 +1,5 @@
 # Databricks notebook source
+# MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/common
 # MAGIC %run ./maintenance_utils
 
 # COMMAND ----------
@@ -87,7 +88,7 @@ if break_glass:
 # ------------------------------------------------------------
 # Resolve ETL metadata for logging
 # ------------------------------------------------------------
-etl_meta = resolve_etl_metadata()
+etl_meta = resolve_etl_metadata(include_source_system=False)
 print(f"[INFO] Job Run ID : {etl_meta['job_run_id']}")
 print(f"[INFO] Notebook   : {etl_meta['notebook_path']}")
 

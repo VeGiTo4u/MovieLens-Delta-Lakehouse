@@ -1,4 +1,5 @@
 # Databricks notebook source
+# MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/common
 # MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/silver/utils
 
 # COMMAND ----------
@@ -27,13 +28,13 @@ target_schema_name  = dbutils.widgets.get("target_schema_name")
 # ------------------------------------------------------------
 # Validation + Context — Fail Fast Before Any Spark Work
 # ------------------------------------------------------------
-s3_target_path = validate_inputs(s3_target_path, source_table_name, target_table_name)
-etl_meta = resolve_etl_metadata()
+s3_target_path = validate_s3_path(s3_target_path, "target path")
+validate_table_name(source_table_name, "source_table_name")
+validate_table_name(target_table_name, "target_table_name")
+etl_meta = resolve_etl_metadata(include_source_system=True)
 
-source_full, target_full = build_table_names(
-    source_catalog_name, source_schema_name, source_table_name,
-    target_catalog_name, target_schema_name, target_table_name
-)
+source_full = build_table_name(source_catalog_name, source_schema_name, source_table_name)
+target_full = build_table_name(target_catalog_name, target_schema_name, target_table_name)
 
 # COMMAND ----------
 
@@ -88,150 +89,8 @@ if not years_to_process:
 # COMMAND ----------
 
 # ------------------------------------------------------------
-# Transformation — Business Logic Isolation
-# ------------------------------------------------------------
-def transform_ratings(df):
-    """
-    Cleans and conforms Bronze ratings data to Silver standards.
-
-    Steps:
-      1. Column rename + type cast
-      2. Timestamp conversion (Unix epoch → TIMESTAMP)
-      3. Date key derivation (YYYYMMDD as INT)
-      4. Rating rounding to 1 decimal place
-      5. Late arrival flag derivation
-      6. rating_year derivation (event year — partition column)
-      7. SCD2 columns initialization
-
-    No deduplication — all rating events are preserved.
-    A user rating the same movie multiple times over the years
-    is a valid event history. SCD2 versioning is handled by
-    write_incremental_merge() during the MERGE step.
-
-    DQ flagging (not dropping) is handled by apply_dq_flags()
-    so quarantined rows remain visible for audit.
-    """
-    from pyspark.sql.types import IntegerType, DoubleType, TimestampType
-
-    return (
-        df
-        # Step 1: Rename + cast
-        .withColumn("user_id",  F.col("userId").cast(IntegerType()))
-        .withColumn("movie_id", F.col("movieId").cast(IntegerType()))
-        .withColumn("rating",   F.col("rating").cast(DoubleType()))
-
-        # Step 2: Unix epoch → TIMESTAMP
-        .withColumn("interaction_timestamp",
-                    F.from_unixtime(F.col("timestamp")).cast(TimestampType()))
-
-        # Step 3: Date key YYYYMMDD as INT — used as FK to dim_date in Gold
-        .withColumn("date_key",
-                    F.date_format(F.col("interaction_timestamp"), "yyyyMMdd")
-                     .cast(IntegerType()))
-
-        # Step 4: Round rating to 1 decimal place
-        .withColumn("rating", F.round(F.col("rating"), 1))
-
-        # Step 5: Late arrival flag
-        # Compares the actual event year (from timestamp) to the batch year
-        # (from the source filename via _batch_year).
-        #
-        # True  → record arrived in a different year's batch than its event year.
-        #         e.g. a 2019 rating appearing in ratings_2022.csv
-        # False → record arrived in the correct batch year (normal case)
-        .withColumn("is_late_arrival",
-                    F.year(F.col("interaction_timestamp")) != F.col("_batch_year"))
-
-        # Step 6: rating_year — event year from timestamp
-        # THIS IS THE PARTITION COLUMN. Not _batch_year.
-        # Late arrivals land in the correct partition via MERGE.
-        .withColumn("rating_year",
-                    F.year(F.col("interaction_timestamp")))
-
-        # Step 7: SCD2 columns
-        # is_current: defaults to True for incoming rows
-        #   write_incremental_merge() will set this correctly during MERGE:
-        #   - On first run: computed via window function across all rows
-        #   - On incremental: new rows insert as True, old versions expire to False
-        # effective_start_date: when this version of the rating became active
-        #   Always equals interaction_timestamp (the moment the user rated)
-        # effective_end_date: when this version was superseded by a newer rating
-        #   NULL for current versions, set during MERGE when a re-rating arrives
-        .withColumn("is_current", F.lit(True))
-        .withColumn("effective_start_date", F.col("interaction_timestamp"))
-        .withColumn("effective_end_date", F.lit(None).cast(TimestampType()))
-
-        # Final column selection — drop raw bronze columns
-        .select(
-            "user_id",
-            "movie_id",
-            "rating",
-            "interaction_timestamp",
-            "date_key",
-            "is_late_arrival",
-            "rating_year",
-            "is_current",
-            "effective_start_date",
-            "effective_end_date",
-            "_ingestion_timestamp",
-            "_batch_year",
-        )
-    )
-
-# COMMAND ----------
-
-# ------------------------------------------------------------
-# DQ Rules for ratings
-#
-# Rules define what makes a row QUARANTINE.
-# Each rule is (rule_name, fail_condition_as_Column).
-# apply_dq_flags() evaluates all rules per row and attaches
-# _dq_status + _dq_failed_rules without dropping any rows.
-# Gold filters to _dq_status = 'PASS' rows only.
-# ------------------------------------------------------------
-def get_dq_rules():
-    return [
-        ("NULL_USER_ID",
-         F.col("user_id").isNull()),
-
-        ("NULL_MOVIE_ID",
-         F.col("movie_id").isNull()),
-
-        ("NULL_RATING",
-         F.col("rating").isNull()),
-
-        ("NULL_TIMESTAMP",
-         F.col("interaction_timestamp").isNull()),
-
-        # Guard against epoch-zero (timestamp=0 → 1970-01-01) and other
-        # sentinel values that pass NULL checks but are not real events.
-        # MovieLens rating activity begins ~1995. Any timestamp before
-        # this floor is a source system default or corruption signal —
-        # not a real user rating. Without this rule, a single bad record
-        # silently expands dim_date back to 1970 and pollutes year-based
-        # analytics. Evaluated after NULL_TIMESTAMP so we never call
-        # the comparison on a null — NULL_TIMESTAMP quarantines those first.
-        ("INVALID_TIMESTAMP_FLOOR",
-         F.col("interaction_timestamp").isNotNull() &
-         (F.col("interaction_timestamp") < F.lit("1995-01-01").cast(TimestampType()))),
-
-        # Rating must be within valid MovieLens range
-        ("INVALID_RATING_RANGE",
-         ~F.col("rating").between(0.0, 5.0)),
-
-        # date_key must match interaction_timestamp — detects derivation bugs
-        ("DATE_KEY_MISMATCH",
-         F.col("date_key") != F.date_format(
-             F.col("interaction_timestamp"), "yyyyMMdd"
-         ).cast(IntegerType())),
-    ]
-
-# COMMAND ----------
-
-# ------------------------------------------------------------
-# Import production transform functions.
-# Local definitions above are retained as notebook-readable reference,
-# but execution uses the package implementation tested by pytest.
+# Import production transform functions (single source of truth
+# in scripts/silver/transforms/ratings — tested by pytest).
 # ------------------------------------------------------------
 from scripts.silver.transforms.ratings import get_dq_rules, transform_ratings
 
@@ -348,11 +207,10 @@ merge_result = write_incremental_merge(
 # ------------------------------------------------------------
 # Register + Validate + Summary
 # ------------------------------------------------------------
-register_table(target_full, s3_target_path)
+register_table(spark, target_full, s3_target_path)
 
-post_write_validation(target_full, merge_result["rows_affected"])
 
-print_summary(
+print_pipeline_summary("SILVER", "TRANSFORMATION", 
     source_full_table_name = source_full,
     target_full_table_name = target_full,
     s3_target_path         = s3_target_path,

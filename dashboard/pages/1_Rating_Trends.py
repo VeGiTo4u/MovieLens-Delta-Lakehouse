@@ -9,6 +9,7 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from services.data_loader import load_rating_trends_monthly, load_yearly_summary
+from services.render_helpers import render_yearly_table
 from config.theme import inject_theme, section_header, callout, PLOTLY_LAYOUT, CHART_GRADIENT, COLORS
 
 st.set_page_config(page_title="Rating Trends | MovieLens", layout="wide")
@@ -178,30 +179,4 @@ st.plotly_chart(fig_yoy, use_container_width=True)
 # ── Yearly Summary Table ─────────────────────────────────────
 st.markdown(section_header("Yearly Summary"), unsafe_allow_html=True)
 
-df_display = df_yearly.sort_values("year", ascending=False).copy()
-df_display.columns = [
-    "Year", "Total Ratings", "Unique Users", "Unique Movies",
-    "Avg Rating", "Late Arrivals", "Late Arrival %"
-]
-
-max_ratings = df_display["Total Ratings"].max()
-
-st.dataframe(
-    df_display,
-    use_container_width=True,
-    hide_index=True,
-    column_config={
-        "Year": st.column_config.NumberColumn("Year", format="%d"),
-        "Total Ratings": st.column_config.ProgressColumn(
-            "Total Ratings",
-            min_value=0,
-            max_value=int(max_ratings),
-            format="%d",
-        ),
-        "Unique Users": st.column_config.NumberColumn("Unique Users", format="%d"),
-        "Unique Movies": st.column_config.NumberColumn("Unique Movies", format="%d"),
-        "Avg Rating": st.column_config.NumberColumn("Avg Rating", format="%.2f"),
-        "Late Arrivals": st.column_config.NumberColumn("Late Arrivals", format="%d"),
-        "Late Arrival %": st.column_config.NumberColumn("Late Arrival %", format="%.3f%%"),
-    },
-)
+render_yearly_table(df_yearly)

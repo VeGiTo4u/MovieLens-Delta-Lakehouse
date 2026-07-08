@@ -1,4 +1,5 @@
 # Databricks notebook source
+# MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/common
 # MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/bronze/utils
 
 # COMMAND ----------
@@ -30,10 +31,10 @@ schema_name    = dbutils.widgets.get("schema_name")
 # Validates inputs and resolves ETL metadata (job ID, notebook
 # path) upfront so failures surface immediately, not mid-write.
 # ------------------------------------------------------------
-s3_source_path, s3_target_path = validate_inputs(
-    s3_source_path, s3_target_path, table_name
-)
-etl_meta        = resolve_etl_metadata()
+s3_source_path = validate_s3_path(s3_source_path, "source path")
+s3_target_path = validate_s3_path(s3_target_path, "target path")
+validate_table_name(table_name)
+etl_meta        = resolve_etl_metadata(include_source_system=True)
 full_table_name = build_table_name(catalog_name, schema_name, table_name)
 
 # COMMAND ----------
@@ -102,18 +103,24 @@ records_written = write_static_bronze(df_bronze, s3_target_path, table_name)
 # ------------------------------------------------------------
 # Register + Validate + Summary
 # ------------------------------------------------------------
-register_table(full_table_name, s3_target_path)
+register_table(spark, full_table_name, s3_target_path)
 
-post_write_validation_bronze(full_table_name, records_written)
 
-print_summary(
-    label           = "Static",
-    full_table_name = full_table_name,
-    s3_source_path  = s3_source_path,
-    s3_target_path  = s3_target_path,
-    etl_meta        = etl_meta,
-    extra_info      = {
+print_pipeline_summary(
+    "BRONZE", "Static INGESTION",
+    {
+        "": {
+            "Table": full_table_name,
+            "Source": s3_source_path,
+            "Target": s3_target_path,
+        },
+        "ETL Metadata": {
+            "_job_run_id": etl_meta["job_run_id"],
+            "_notebook_path": etl_meta["notebook_path"],
+            "_source_system": etl_meta["source_system"],
+        },
+        "Run Details": {
         "Records written" : f"{records_written:,}",
         "Write strategy"  : "Full overwrite + mergeSchema",
     }
-)
+})

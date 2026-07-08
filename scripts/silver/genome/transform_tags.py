@@ -1,4 +1,5 @@
 # Databricks notebook source
+# MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/common
 # MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/silver/utils
 
 # COMMAND ----------
@@ -27,13 +28,13 @@ target_schema_name  = dbutils.widgets.get("target_schema_name")
 # ------------------------------------------------------------
 # Validation + Context — Fail Fast Before Any Spark Work
 # ------------------------------------------------------------
-s3_target_path = validate_inputs(s3_target_path, source_table_name, target_table_name)
-etl_meta       = resolve_etl_metadata()
+s3_target_path = validate_s3_path(s3_target_path, "target path")
+validate_table_name(source_table_name, "source_table_name")
+validate_table_name(target_table_name, "target_table_name")
+etl_meta       = resolve_etl_metadata(include_source_system=True)
 
-source_full, target_full = build_table_names(
-    source_catalog_name, source_schema_name, source_table_name,
-    target_catalog_name, target_schema_name, target_table_name
-)
+source_full = build_table_name(source_catalog_name, source_schema_name, source_table_name)
+target_full = build_table_name(target_catalog_name, target_schema_name, target_table_name)
 
 # COMMAND ----------
 
@@ -63,63 +64,8 @@ initial_count = df_bronze.count()
 # COMMAND ----------
 
 # ------------------------------------------------------------
-# Transformation — Business Logic Isolation
-# ------------------------------------------------------------
-def transform_genome_tags(df):
-    """
-    Cleans and conforms Bronze genome_tags data to Silver standards.
-
-    Steps:
-      1. Column rename + type cast
-      2. Whitespace normalization — trim + collapse internal whitespace
-      3. Title Case formatting
-    """
-    return (
-        df
-        # Step 1: Cast
-        .withColumn("tag_id",  F.col("tagId").cast(IntegerType()))
-        .withColumn("tag_raw", F.col("tag").cast(StringType()))
-
-        # Step 2: Trim + collapse internal whitespace (tabs, newlines, multiple spaces)
-        .withColumn("tag",
-                    F.trim(F.regexp_replace(
-                        F.regexp_replace(F.col("tag_raw"), r"[\n\t\r]+", " "),
-                        r"\s+", " "
-                    )))
-
-        # Step 3: Title Case
-        .withColumn("tag", F.initcap(F.col("tag")))
-
-        .select(
-            "tag_id",
-            "tag",
-            "_ingestion_timestamp",
-        )
-    )
-
-# COMMAND ----------
-
-# ------------------------------------------------------------
-# DQ Rules for genome_tags
-# ------------------------------------------------------------
-def get_dq_rules():
-    return [
-        ("NULL_TAG_ID",
-         F.col("tag_id").isNull()),
-
-        ("NULL_TAG",
-         F.col("tag").isNull()),
-
-        ("EMPTY_TAG",
-         F.trim(F.col("tag")) == ""),
-    ]
-
-# COMMAND ----------
-
-# ------------------------------------------------------------
-# Import production transform functions.
-# Local definitions above are retained as notebook-readable reference,
-# but execution uses the package implementation tested by pytest.
+# Import production transform functions (single source of truth
+# in scripts/silver/transforms/genome_tags — tested by pytest).
 # ------------------------------------------------------------
 from scripts.silver.transforms.genome_tags import get_dq_rules, transform_genome_tags
 
@@ -145,9 +91,8 @@ write_static(df_silver, s3_target_path, target_table_name)
 # ------------------------------------------------------------
 # Register + Validate + Summary
 # ------------------------------------------------------------
-register_table(target_full, s3_target_path)
+register_table(spark, target_full, s3_target_path)
 
-post_write_validation(target_full, final_count)
 
 tag_length_stats = df_silver.select(
     F.min(F.length(F.col("tag"))).alias("min_len"),
@@ -155,7 +100,7 @@ tag_length_stats = df_silver.select(
     F.avg(F.length(F.col("tag"))).alias("avg_len"),
 ).collect()[0]
 
-print_summary(
+print_pipeline_summary("SILVER", "TRANSFORMATION", 
     source_full_table_name = source_full,
     target_full_table_name = target_full,
     s3_target_path         = s3_target_path,
