@@ -35,9 +35,7 @@ s3_target_path = validate_s3_path(s3_target_path, "target path")
 validate_table_name(target_table_name)
 etl_meta       = resolve_etl_metadata(include_source_system=False)
 
-target_full, _ = build_table_names(
-    target_catalog_name, target_schema_name, target_table_name
-)
+target_full = build_table_name(target_catalog_name, target_schema_name, target_table_name)
 
 # COMMAND ----------
 
