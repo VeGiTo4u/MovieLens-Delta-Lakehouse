@@ -106,53 +106,30 @@ relevance_stats = df_silver.filter(
     F.avg("relevance").alias("avg_r"),
 ).collect()[0]
 
-<<<<<<< Updated upstream
-    extra_info = {
-        "Quarantined records"  : f"{quarantine_count:,}",
-        "Relevance min/max"    : f"{relevance_stats['min_r']:.3f} / {relevance_stats['max_r']:.3f}",
-        "Relevance avg"        : f"{relevance_stats['avg_r']:.6f}",
-        "Write strategy"       : "Full overwrite + mergeSchema",
-=======
-print_pipeline_summary("SILVER", "TRANSFORMATION", 
+extra_info = {
+    "Quarantined records"  : f"{quarantine_count:,}",
+    "Relevance min/max"    : f"{relevance_stats['min_r']:.3f} / {relevance_stats['max_r']:.3f}",
+    "Relevance avg"        : f"{relevance_stats['avg_r']:.6f}",
+    "Write strategy"       : "Full overwrite + mergeSchema",
+}
+extra_info.update({
+    "Initial count": f"{initial_count:,}",
+    "Final count": f"{final_count:,}",
+})
+
+print_pipeline_summary(
+    "SILVER", "TRANSFORMATION", 
     {
         "": {
-            "Source table": source_full,
-            "Target table": target_full,
-            "Target location": s3_target_path,
-            "Initial count": f"{initial_count:,}",
-            "Final count": f"{final_count:,}",
+            "Source Table": source_full,
+            "Target Table": target_full,
+            "Target S3": s3_target_path,
         },
         "ETL Metadata": {
             "_job_run_id": etl_meta["job_run_id"],
             "_notebook_path": etl_meta["notebook_path"],
-            "_source_system": etl_meta["source_system"],
+            "_source_system": etl_meta.get("source_system", "UNKNOWN"),
         },
-        "Run Details": {
-            "Quarantined records"  : f"{quarantine_count:,}",
-            "Relevance min/max"    : f"{relevance_stats['min_r']:.3f} / {relevance_stats['max_r']:.3f}",
-            "Relevance avg"        : f"{relevance_stats['avg_r']:.6f}",
-            "Write strategy"       : "Full overwrite + mergeSchema",
-        }
->>>>>>> Stashed changes
+        "Run Details": extra_info,
     }
-    extra_info.update({
-        "Initial count": f"{initial_count:,}",
-        "Final count": f"{final_count:,}",
-    })
-
-    print_pipeline_summary(
-        "SILVER", "TRANSFORMATION", 
-        {
-            "": {
-                "Source Table": source_full,
-                "Target Table": target_full,
-                "Target S3": s3_target_path,
-            },
-            "ETL Metadata": {
-                "_job_run_id": etl_meta["job_run_id"],
-                "_notebook_path": etl_meta["notebook_path"],
-                "_source_system": etl_meta.get("source_system", "UNKNOWN"),
-            },
-            "Run Details": extra_info,
-        }
-    )
+)
