@@ -146,9 +146,9 @@ register_table(spark, target_full, s3_target_path)
 
 no_ext_ids_count = spark.table(target_full).filter(~F.col("has_external_ids")).count()
 
-main_fields = {\"Target\": target_full, \"Location\": s3_target_path}
-if source_full: main_fields[\"Source\"] = source_full
-print_pipeline_summary(\"GOLD\", "dim_external_links".upper() + \" CREATION\", {\"\": main_fields, \"ETL Metadata\": {\"_job_run_id\": etl_meta[\"job_run_id\"], \"_notebook_path\": etl_meta[\"notebook_path\"], \"_model_version\": model_version}, \"Run Details\": {
+main_fields = {"Target": target_full, "Location": s3_target_path}
+if source_full: main_fields["Source"] = source_full
+print_pipeline_summary("GOLD", "dim_external_links".upper() + " CREATION", {"": main_fields, "ETL Metadata": {"_job_run_id": etl_meta["job_run_id"], "_notebook_path": etl_meta["notebook_path"], "_model_version": model_version}, "Run Details": {
         "Silver rows total"        : f"{initial_count:,}",
         "Quarantined (excluded)"   : f"{quarantine_count:,}",
         "Orphans removed (FK)"     : f"{orphan_count:,}",

@@ -242,8 +242,8 @@ stats = spark.table(target_full).agg(
     F.sum(F.when(~F.col("is_weekend"), 1).otherwise(0)).alias("weekday_days"),
 ).collect()[0]
 
-main_fields = {\"Target\": target_full, \"Location\": s3_target_path}
-print_pipeline_summary(\"GOLD\", "dim_date".upper() + \" CREATION\", {\"\": main_fields, \"ETL Metadata\": {\"_job_run_id\": etl_meta[\"job_run_id\"], \"_notebook_path\": etl_meta[\"notebook_path\"], \"_model_version\": model_version}, \"Run Details\": {
+main_fields = {"Target": target_full, "Location": s3_target_path}
+print_pipeline_summary("GOLD", "dim_date".upper() + " CREATION", {"": main_fields, "ETL Metadata": {"_job_run_id": etl_meta["job_run_id"], "_notebook_path": etl_meta["notebook_path"], "_model_version": model_version}, "Run Details": {
         "Date range"             : f"{START_DATE} → {END_DATE}",
         "Total days"             : f"{final_count:,}",
         "Years covered"          : f"{stats['unique_years']} ({stats['min_year']}–{stats['max_year']})",

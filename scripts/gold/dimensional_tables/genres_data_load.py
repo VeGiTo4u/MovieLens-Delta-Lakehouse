@@ -212,9 +212,9 @@ id_stats = spark.table(target_full).select(
     F.max("genre_id").alias("max_id"),
 ).collect()[0]
 
-main_fields = {\"Target\": target_full, \"Location\": s3_target_path}
-if source_full: main_fields[\"Source\"] = source_full
-print_pipeline_summary(\"GOLD\", "dim_genres".upper() + \" CREATION\", {\"\": main_fields, \"ETL Metadata\": {\"_job_run_id\": etl_meta[\"job_run_id\"], \"_notebook_path\": etl_meta[\"notebook_path\"], \"_model_version\": model_version}, \"Run Details\": {
+main_fields = {"Target": target_full, "Location": s3_target_path}
+if source_full: main_fields["Source"] = source_full
+print_pipeline_summary("GOLD", "dim_genres".upper() + " CREATION", {"": main_fields, "ETL Metadata": {"_job_run_id": etl_meta["job_run_id"], "_notebook_path": etl_meta["notebook_path"], "_model_version": model_version}, "Run Details": {
         "Run mode"               : "Initial Load" if is_first_run else "Incremental Update",
         "Silver rows total"      : f"{initial_count:,}",
         "Quarantined (excluded)" : f"{quarantine_count:,}",

@@ -156,9 +156,9 @@ register_table(spark, target_full, s3_target_path)
 unique_movies = spark.table(target_full).select("movie_sk").distinct().count()
 unique_genres = spark.table(target_full).select("genre_sk").distinct().count()
 
-main_fields = {\"Target\": target_full, \"Location\": s3_target_path}
-if source_full: main_fields[\"Source\"] = source_full
-print_pipeline_summary(\"GOLD\", "bridge_movies_genres".upper() + \" CREATION\", {\"\": main_fields, \"ETL Metadata\": {\"_job_run_id\": etl_meta[\"job_run_id\"], \"_notebook_path\": etl_meta[\"notebook_path\"], \"_model_version\": model_version}, \"Run Details\": {
+main_fields = {"Target": target_full, "Location": s3_target_path}
+if source_full: main_fields["Source"] = source_full
+print_pipeline_summary("GOLD", "bridge_movies_genres".upper() + " CREATION", {"": main_fields, "ETL Metadata": {"_job_run_id": etl_meta["job_run_id"], "_notebook_path": etl_meta["notebook_path"], "_model_version": model_version}, "Run Details": {
         "Silver movies total"    : f"{initial_count:,}",
         "Quarantined movies"     : f"{quarantine_count:,}",
         "Bridge rows written"    : f"{final_count:,}",

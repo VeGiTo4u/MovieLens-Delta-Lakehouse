@@ -160,9 +160,9 @@ coverage = spark.table(target_full).agg(
     F.avg("relevance").alias("avg_relevance"),
 ).collect()[0]
 
-main_fields = {\"Target\": target_full, \"Location\": s3_target_path}
-if source_full: main_fields[\"Source\"] = source_full
-print_pipeline_summary(\"GOLD\", "fact_genome_scores".upper() + \" CREATION\", {\"\": main_fields, \"ETL Metadata\": {\"_job_run_id\": etl_meta[\"job_run_id\"], \"_notebook_path\": etl_meta[\"notebook_path\"], \"_model_version\": model_version}, \"Run Details\": {
+main_fields = {"Target": target_full, "Location": s3_target_path}
+if source_full: main_fields["Source"] = source_full
+print_pipeline_summary("GOLD", "fact_genome_scores".upper() + " CREATION", {"": main_fields, "ETL Metadata": {"_job_run_id": etl_meta["job_run_id"], "_notebook_path": etl_meta["notebook_path"], "_model_version": model_version}, "Run Details": {
         "Silver rows (PASS)"     : f"{initial_count:,}",
         "Silver quarantined"     : f"{quarantine_count:,}",
         "Movie orphans removed"  : f"{movie_orphans_removed:,}",
