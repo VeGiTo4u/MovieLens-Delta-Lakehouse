@@ -46,13 +46,13 @@ print(f"[INFO] Output dir : {OUTPUT_DIR}")
 # ------------------------------------------------------------
 print("[START] Loading Gold layer tables")
 
-fact_ratings     = spark.table(f"{catalog_name}.gold.fact_ratings").cache()
-dim_movies       = spark.table(f"{catalog_name}.gold.dim_movies").cache()
-dim_genres       = spark.table(f"{catalog_name}.gold.dim_genres").cache()
-bridge_mg        = spark.table(f"{catalog_name}.gold.bridge_movies_genres").cache()
-dim_date         = spark.table(f"{catalog_name}.gold.dim_date").cache()
-fact_gs          = spark.table(f"{catalog_name}.gold.fact_genome_scores").cache()
-dim_genome_tags  = spark.table(f"{catalog_name}.gold.dim_genome_tags").cache()
+fact_ratings     = spark.table(f"{catalog_name}.gold.fact_ratings")
+dim_movies       = spark.table(f"{catalog_name}.gold.dim_movies")
+dim_genres       = spark.table(f"{catalog_name}.gold.dim_genres")
+bridge_mg        = spark.table(f"{catalog_name}.gold.bridge_movies_genres")
+dim_date         = spark.table(f"{catalog_name}.gold.dim_date")
+fact_gs          = spark.table(f"{catalog_name}.gold.fact_genome_scores")
+dim_genome_tags  = spark.table(f"{catalog_name}.gold.dim_genome_tags")
 
 print("[DONE] All Gold tables loaded")
 
@@ -147,7 +147,7 @@ movie_stats = (
         F.round(F.avg("rating"), 2).alias("avg_rating"),
         F.count("*").alias("rating_count"),
     )
-).cache()
+)
 
 kpi_3 = (
     movie_stats
@@ -221,7 +221,7 @@ user_counts = (
     fact_ratings
     .groupBy("user_id")
     .agg(F.count("*").alias("rating_count"))
-).cache()
+)
 
 kpi_6 = (
     user_counts
@@ -386,15 +386,3 @@ print(f"  {OUTPUT_DIR}/<filename>.parquet")
 print("[INFO] Query locally with DuckDB:")
 print("  SELECT * FROM read_parquet('rating_trends_monthly.parquet');")
 
-for df in [
-    fact_ratings,
-    dim_movies,
-    dim_genres,
-    bridge_mg,
-    dim_date,
-    fact_gs,
-    dim_genome_tags,
-    movie_stats,
-    user_counts,
-]:
-    df.unpersist()
