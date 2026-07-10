@@ -103,17 +103,30 @@ relevance_stats = df_silver.filter(
     F.avg("relevance").alias("avg_r"),
 ).collect()[0]
 
-print_pipeline_summary("SILVER", "TRANSFORMATION", 
-    source_full_table_name = source_full,
-    target_full_table_name = target_full,
-    s3_target_path         = s3_target_path,
-    initial_count          = initial_count,
-    final_count            = final_count,
-    etl_meta               = etl_meta,
-    extra_info             = {
+    extra_info = {
         "Quarantined records"  : f"{quarantine_count:,}",
         "Relevance min/max"    : f"{relevance_stats['min_r']:.3f} / {relevance_stats['max_r']:.3f}",
         "Relevance avg"        : f"{relevance_stats['avg_r']:.6f}",
         "Write strategy"       : "Full overwrite + mergeSchema",
     }
-)
+    extra_info.update({
+        "Initial count": f"{initial_count:,}",
+        "Final count": f"{final_count:,}",
+    })
+
+    print_pipeline_summary(
+        "SILVER", "TRANSFORMATION", 
+        {
+            "": {
+                "Source Table": source_full,
+                "Target Table": target_full,
+                "Target S3": s3_target_path,
+            },
+            "ETL Metadata": {
+                "_job_run_id": etl_meta["job_run_id"],
+                "_notebook_path": etl_meta["notebook_path"],
+                "_source_system": etl_meta.get("source_system", "UNKNOWN"),
+            },
+            "Run Details": extra_info,
+        }
+    )

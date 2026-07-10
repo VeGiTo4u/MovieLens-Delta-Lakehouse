@@ -97,18 +97,31 @@ no_external_ids_count = df_silver.filter(~F.col("has_external_ids")).count()
 null_imdb_count       = df_silver.filter(F.col("imdb_id").isNull()).count()
 null_tmdb_count       = df_silver.filter(F.col("tmdb_id").isNull()).count()
 
-print_pipeline_summary("SILVER", "TRANSFORMATION", 
-    source_full_table_name = source_full,
-    target_full_table_name = target_full,
-    s3_target_path         = s3_target_path,
-    initial_count          = initial_count,
-    final_count            = final_count,
-    etl_meta               = etl_meta,
-    extra_info             = {
+    extra_info = {
         "Quarantined records"     : f"{quarantine_count:,}",
         "Movies with no ext IDs"  : f"{no_external_ids_count:,}",
         "NULL imdb_id"            : f"{null_imdb_count:,}",
         "NULL tmdb_id"            : f"{null_tmdb_count:,}",
         "Write strategy"          : "Full overwrite + mergeSchema",
     }
-)
+    extra_info.update({
+        "Initial count": f"{initial_count:,}",
+        "Final count": f"{final_count:,}",
+    })
+
+    print_pipeline_summary(
+        "SILVER", "TRANSFORMATION", 
+        {
+            "": {
+                "Source Table": source_full,
+                "Target Table": target_full,
+                "Target S3": s3_target_path,
+            },
+            "ETL Metadata": {
+                "_job_run_id": etl_meta["job_run_id"],
+                "_notebook_path": etl_meta["notebook_path"],
+                "_source_system": etl_meta.get("source_system", "UNKNOWN"),
+            },
+            "Run Details": extra_info,
+        }
+    )

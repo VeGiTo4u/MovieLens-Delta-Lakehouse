@@ -108,17 +108,30 @@ register_table(spark, target_full, s3_target_path)
 null_year_count   = df_silver.filter(F.col("release_year").isNull()).count()
 empty_genre_count = df_silver.filter(F.size(F.col("genres")) == 0).count()
 
-print_pipeline_summary("SILVER", "TRANSFORMATION", 
-    source_full_table_name = source_full,
-    target_full_table_name = target_full,
-    s3_target_path         = s3_target_path,
-    initial_count          = initial_count,
-    final_count            = final_count,
-    etl_meta               = etl_meta,
-    extra_info             = {
+    extra_info = {
         "Quarantined records"   : f"{quarantine_count:,}",
         "Movies without year"   : f"{null_year_count:,}",
         "Movies without genres" : f"{empty_genre_count:,}",
         "Write strategy"        : "Full overwrite + mergeSchema",
     }
-)
+    extra_info.update({
+        "Initial count": f"{initial_count:,}",
+        "Final count": f"{final_count:,}",
+    })
+
+    print_pipeline_summary(
+        "SILVER", "TRANSFORMATION", 
+        {
+            "": {
+                "Source Table": source_full,
+                "Target Table": target_full,
+                "Target S3": s3_target_path,
+            },
+            "ETL Metadata": {
+                "_job_run_id": etl_meta["job_run_id"],
+                "_notebook_path": etl_meta["notebook_path"],
+                "_source_system": etl_meta.get("source_system", "UNKNOWN"),
+            },
+            "Run Details": extra_info,
+        }
+    )
