@@ -1,6 +1,9 @@
 # Databricks notebook source
 # MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/common
-# MAGIC %run ./maintenance_utils
+
+# COMMAND ----------
+
+# MAGIC %run /Workspace/MovieLens-Delta-Lakehouse/scripts/maintenance/utils
 
 # COMMAND ----------
 
