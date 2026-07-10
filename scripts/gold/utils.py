@@ -8,7 +8,7 @@
 #
 # Functions provided:
 #   resolve_etl_metadata()         — job/run context resolution
-#   validate_inputs()              — s3 path + table name checks
+#   validate_s3_path() / validate_table_name() — input validation
 #   build_table_names()            — fully qualified Unity Catalog names
 #   get_partition_years()          — metadata-only year discovery via SHOW PARTITIONS
 #   read_silver_pass_only()        — read silver filtered to _dq_status=PASS (single-pass agg)

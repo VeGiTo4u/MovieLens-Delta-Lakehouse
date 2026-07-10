@@ -8,7 +8,7 @@
 #
 # Functions provided:
 #   resolve_etl_metadata()         — job/run context resolution
-#   validate_inputs()              — s3 path + table name checks
+#   validate_s3_path() / validate_table_name() — input validation
 #   build_table_names()            — fully qualified Unity Catalog names
 #   get_partition_years()          — metadata-only year discovery via SHOW PARTITIONS
 #   get_already_processed_years()  — incrementality check (ratings, tags)

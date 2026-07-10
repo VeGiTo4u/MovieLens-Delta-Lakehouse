@@ -31,7 +31,8 @@ model_version       = dbutils.widgets.get("model_version")
 # programmatically from the date range found in silver.ratings.
 # source_table_name is not a widget here.
 # ------------------------------------------------------------
-s3_target_path = validate_inputs(s3_target_path, target_table_name)
+s3_target_path = validate_s3_path(s3_target_path, "target path")
+validate_table_name(target_table_name)
 etl_meta       = resolve_etl_metadata(include_source_system=False)
 
 target_full, _ = build_table_names(
