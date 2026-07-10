@@ -103,30 +103,30 @@ tag_length_stats = df_silver.select(
     F.avg(F.length(F.col("tag"))).alias("avg_len"),
 ).collect()[0]
 
-    extra_info = {
-        "Quarantined records" : f"{quarantine_count:,}",
-        "Tag length min/max"  : f"{tag_length_stats['min_len']} / {tag_length_stats['max_len']}",
-        "Tag length avg"      : f"{tag_length_stats['avg_len']:.2f}",
-        "Write strategy"      : "Full overwrite + mergeSchema",
-    }
-    extra_info.update({
-        "Initial count": f"{initial_count:,}",
-        "Final count": f"{final_count:,}",
-    })
+extra_info = {
+    "Quarantined records" : f"{quarantine_count:,}",
+    "Tag length min/max"  : f"{tag_length_stats['min_len']} / {tag_length_stats['max_len']}",
+    "Tag length avg"      : f"{tag_length_stats['avg_len']:.2f}",
+    "Write strategy"      : "Full overwrite + mergeSchema",
+}
+extra_info.update({
+    "Initial count": f"{initial_count:,}",
+    "Final count": f"{final_count:,}",
+})
 
-    print_pipeline_summary(
-        "SILVER", "TRANSFORMATION", 
-        {
-            "": {
-                "Source Table": source_full,
-                "Target Table": target_full,
-                "Target S3": s3_target_path,
-            },
-            "ETL Metadata": {
-                "_job_run_id": etl_meta["job_run_id"],
-                "_notebook_path": etl_meta["notebook_path"],
-                "_source_system": etl_meta.get("source_system", "UNKNOWN"),
-            },
-            "Run Details": extra_info,
-        }
-    )
+print_pipeline_summary(
+    "SILVER", "TRANSFORMATION", 
+    {
+        "": {
+            "Source Table": source_full,
+            "Target Table": target_full,
+            "Target S3": s3_target_path,
+        },
+        "ETL Metadata": {
+            "_job_run_id": etl_meta["job_run_id"],
+            "_notebook_path": etl_meta["notebook_path"],
+            "_source_system": etl_meta.get("source_system", "UNKNOWN"),
+        },
+        "Run Details": extra_info,
+    }
+)

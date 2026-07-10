@@ -162,31 +162,31 @@ for year in years_to_process:
 register_table(spark, target_full, s3_target_path)
 
 
-    extra_info = {
-        "Years processed"     : years_to_process,
-        "Years skipped"       : years_to_skip,
-        "Quarantined records" : f"{total_quarantine:,}",
-        "Write strategy"      : "replaceWhere(_batch_year) + partitionBy",
-        "Deduplication"       : "None — all events preserved (Gold responsibility)",
-    }
-    extra_info.update({
-        "Initial count": f"{total_processed:,}",
-        "Final count": f"{total_processed:,}",
-    })
+extra_info = {
+    "Years processed"     : years_to_process,
+    "Years skipped"       : years_to_skip,
+    "Quarantined records" : f"{total_quarantine:,}",
+    "Write strategy"      : "replaceWhere(_batch_year) + partitionBy",
+    "Deduplication"       : "None — all events preserved (Gold responsibility)",
+}
+extra_info.update({
+    "Initial count": f"{total_processed:,}",
+    "Final count": f"{total_processed:,}",
+})
 
-    print_pipeline_summary(
-        "SILVER", "TRANSFORMATION", 
-        {
-            "": {
-                "Source Table": source_full,
-                "Target Table": target_full,
-                "Target S3": s3_target_path,
-            },
-            "ETL Metadata": {
-                "_job_run_id": etl_meta["job_run_id"],
-                "_notebook_path": etl_meta["notebook_path"],
-                "_source_system": etl_meta.get("source_system", "UNKNOWN"),
-            },
-            "Run Details": extra_info,
-        }
-    )
+print_pipeline_summary(
+    "SILVER", "TRANSFORMATION", 
+    {
+        "": {
+            "Source Table": source_full,
+            "Target Table": target_full,
+            "Target S3": s3_target_path,
+        },
+        "ETL Metadata": {
+            "_job_run_id": etl_meta["job_run_id"],
+            "_notebook_path": etl_meta["notebook_path"],
+            "_source_system": etl_meta.get("source_system", "UNKNOWN"),
+        },
+        "Run Details": extra_info,
+    }
+)

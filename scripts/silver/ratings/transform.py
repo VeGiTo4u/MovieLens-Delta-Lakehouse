@@ -213,39 +213,39 @@ merge_result = write_incremental_merge(
 register_table(spark, target_full, s3_target_path)
 
 
-    extra_info = {
-        "Years processed"      : years_to_process,
-        "Years skipped"        : years_to_skip,
-        "Quarantined records"  : f"{total_quarantine:,}",
-        "Late arrival records" : f"{total_late_arrivals:,} (flagged — Silver MERGE routes to correct rating_year)",
-        "Rows inserted (MERGE)": f"{merge_result['rows_inserted']:,}",
-        "Rows updated (MERGE)" : f"{merge_result['rows_updated']:,}",
-        "SCD2 expirations"     : f"{merge_result['scd2_expirations']:,}",
-        "Duplicates dropped"   : f"{merge_result['duplicates_dropped']:,}",
-        "Partition column"     : "rating_year (event year from timestamp, NOT _batch_year)",
-        "Write strategy"       : "MERGE upsert with SCD Type-2 — routes late arrivals + versions re-ratings",
-        "Merge key"            : "(user_id, movie_id, interaction_timestamp)",
-        "SCD2 natural key"     : "(user_id, movie_id)",
-        "Deduplication"        : "row_number() ORDER BY _processing_timestamp DESC (deterministic)",
-    }
-    extra_info.update({
-        "Initial count": f"{total_processed:,}",
-        "Final count": f"{total_processed:,}",
-    })
+extra_info = {
+    "Years processed"      : years_to_process,
+    "Years skipped"        : years_to_skip,
+    "Quarantined records"  : f"{total_quarantine:,}",
+    "Late arrival records" : f"{total_late_arrivals:,} (flagged — Silver MERGE routes to correct rating_year)",
+    "Rows inserted (MERGE)": f"{merge_result['rows_inserted']:,}",
+    "Rows updated (MERGE)" : f"{merge_result['rows_updated']:,}",
+    "SCD2 expirations"     : f"{merge_result['scd2_expirations']:,}",
+    "Duplicates dropped"   : f"{merge_result['duplicates_dropped']:,}",
+    "Partition column"     : "rating_year (event year from timestamp, NOT _batch_year)",
+    "Write strategy"       : "MERGE upsert with SCD Type-2 — routes late arrivals + versions re-ratings",
+    "Merge key"            : "(user_id, movie_id, interaction_timestamp)",
+    "SCD2 natural key"     : "(user_id, movie_id)",
+    "Deduplication"        : "row_number() ORDER BY _processing_timestamp DESC (deterministic)",
+}
+extra_info.update({
+    "Initial count": f"{total_processed:,}",
+    "Final count": f"{total_processed:,}",
+})
 
-    print_pipeline_summary(
-        "SILVER", "TRANSFORMATION", 
-        {
-            "": {
-                "Source Table": source_full,
-                "Target Table": target_full,
-                "Target S3": s3_target_path,
-            },
-            "ETL Metadata": {
-                "_job_run_id": etl_meta["job_run_id"],
-                "_notebook_path": etl_meta["notebook_path"],
-                "_source_system": etl_meta.get("source_system", "UNKNOWN"),
-            },
-            "Run Details": extra_info,
-        }
-    )
+print_pipeline_summary(
+    "SILVER", "TRANSFORMATION", 
+    {
+        "": {
+            "Source Table": source_full,
+            "Target Table": target_full,
+            "Target S3": s3_target_path,
+        },
+        "ETL Metadata": {
+            "_job_run_id": etl_meta["job_run_id"],
+            "_notebook_path": etl_meta["notebook_path"],
+            "_source_system": etl_meta.get("source_system", "UNKNOWN"),
+        },
+        "Run Details": extra_info,
+    }
+)
